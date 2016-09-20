@@ -1,0 +1,28 @@
+# EPICS installation, object dirs and generated files
+bin/
+db/
+dl/
+dbd/
+include/
+lib/
+templates/
+html/
+O.*/
+cdCommands
+envPaths
+
+# Backup and temp files
+*~
+*.orig
+
+# Darcs control dir
+_darcs/
+.boring
+
+# Dump
+core
+
+# IDE configuration
+QtC-*
+
+clientApp/

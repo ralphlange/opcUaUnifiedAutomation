@@ -1,0 +1,89 @@
+record(ai,"REC:rdPEW272REAL"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,".2 second")
+        field(SCAN,"I/O Intr")
+        field(INP,"@2:S7.DB_RD.rdPEW272REAL")
+}
+record(ai,"REC:rdCntInt"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,".2 second")
+        field(SCAN,"I/O Intr")
+        field(INP,"@2:S7.DB_RD.rdCntInt")
+}
+record(bi,"REC:stHeartbeat"){
+        field(TSE, "-2")
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(DTYP,"OPCUA")
+        field(ONAM,"eins")
+        field(ZNAM,"null")
+        field(INP,"@2:S7.DB_RD.stHeartbeat")
+}
+record(longin,"REC:rdPEW272INT"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(DISS,"INVALID")
+        field(INP,"@2:S7.DB_RD.rdPEW272INT")
+}
+record(longin,"REC:rdVar2"){
+        field(DTYP,"OPCUA")
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(DISS,"INVALID")
+        field(INP,"@2:S7.DB_RD.rdVarVal")
+}
+record(longin,"REC:rdVar1"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(DISS,"INVALID")
+        field(INP,"@2:S7.DB_RD.rdVarVal")
+}
+record(longin,"REC:rdVarVal"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(DISS,"INVALID")
+        field(INP,"@2:S7.DB_RD.setVarVal")
+}
+record(longout,"REC:setVarVal"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(OUT,"@2:S7.DB_RD.setVarVal")
+}
+record(mbbiDirect,"REC:rdBit23"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,"5 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(INP,"@2:S7.DB_RD.setVarVal")
+        field(NOBT,"2")
+        field(SHFT,"2")
+}
+record(mbbi,"REC:stBit23"){
+#        field(SCAN,"5 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(INP,"@2:S7.DB_RD.setVarVal")
+        field(NOBT,"2")
+        field(SHFT,"1")
+        field(ZRVL,"0")
+        field(ONVL,"1")
+        field(TWVL,"2")
+        field(THVL,"3")
+        field(ZRST,"NULL")
+        field(ONST,"EINS")
+        field(TWST,"ZWEI")
+        field(THST,"DREI")
+}

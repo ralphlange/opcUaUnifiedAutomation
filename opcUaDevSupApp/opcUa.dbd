@@ -1,0 +1,32 @@
+
+driver(drvOpcUa)
+
+device(longin,     INST_IO, devlonginOpcUa,	"OPCUA")
+device(longout,    INST_IO, devlongoutOpcUa,	"OPCUA")
+device(mbbiDirect, INST_IO, devmbbiDirectOpcUa, "OPCUA")
+device(mbboDirect, INST_IO, devmbboDirectOpcUa, "OPCUA")
+device(mbbi,       INST_IO, devmbbiOpcUa, "OPCUA")
+device(mbbo,       INST_IO, devmbboOpcUa, "OPCUA")
+device(bi,         INST_IO, devbiOpcUa, 	"OPCUA")
+device(bo,         INST_IO, devboOpcUa, 	"OPCUA")
+device(ai,         INST_IO, devaiOpcUa, 	"OPCUA")
+device(ao,         INST_IO, devaoOpcUa, 	"OPCUA")
+device(stringin,   INST_IO, devstringinOpcUa,	"OPCUA")
+device(stringout,  INST_IO, devstringoutOpcUa,  "OPCUA")
+device(waveform,   INST_IO, devwaveformOpcUa,  "OPCUA")
+
+function(drvOpcUaSetup)
+function(OpcUaDebug)
+function(OpcUaSetupMonitors)
+#function(OpcUaAddSubs)
+#function(OpcUaReadItems)
+function(OpcUaWriteItems)
+#function(createEventMonitoredItems)
+function(opcUa_io_report)
+
+#function(opcUa_setFloat)
+#function(opcUa_setUnsignedShort)
+#function(opcUa_setUnsignedLong)
+#function(opcUa_getFloat)
+
+
