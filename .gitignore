@@ -24,5 +24,11 @@ core
 
 # IDE configuration
 QtC-*
+*.config
+*.creator
+*.creator.user
+*.files
+*.includes
 
 clientApp/
+
