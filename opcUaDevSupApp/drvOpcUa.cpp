@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <boost/algorithm/string.hpp>
 #include <vector>
+#include <iostream>
 #include <signal.h>
 
 // EPICS LIBS
