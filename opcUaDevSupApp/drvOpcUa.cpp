@@ -1001,7 +1001,7 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 static const iocshArg drvOpcUaSetupArg0 = {"[URL]", iocshArgString};
 static const iocshArg drvOpcUaSetupArg1 = {"[CERT_PATH]", iocshArgString};
 static const iocshArg drvOpcUaSetupArg2 = {"[HOST]", iocshArgString};
-static const iocshArg drvOpcUaSetupArg3 = {"[MODE]", iocshArgString};
+static const iocshArg drvOpcUaSetupArg3 = {"[MODE]", iocshArgInt};
 static const iocshArg drvOpcUaSetupArg4 = {"Debug Level", iocshArgInt};
 static const iocshArg *const drvOpcUaSetupArg[5] = {&drvOpcUaSetupArg0,&drvOpcUaSetupArg1,&drvOpcUaSetupArg2,&drvOpcUaSetupArg3,&drvOpcUaSetupArg4};
 iocshFuncDef drvOpcUaSetupFuncDef = {"drvOpcUaSetup", 5, drvOpcUaSetupArg};
@@ -1034,7 +1034,7 @@ void drvOpcUaSetup (const iocshArgBuf *args )
     g_defaultHostname = args[2].sval;
 
     g_certificateStorePath = args[1].sval;
-    g_mode = atoi(args[3].sval);
+    g_mode = args[3].ival;
     if( (g_mode<0)||(g_mode >= GETNODEMODEMAX)) {
         errlogPrintf("drvOpcUaSetup: parameter mode=%d: outside range, set to default: Browsepath or nodeId (BOTH)\n",g_mode);
         g_mode = 0;
@@ -1074,7 +1074,7 @@ void OpcUaDebug (const iocshArgBuf *args )
 }
 epicsRegisterFunction(OpcUaDebug);
 
-static const iocshArg OpcUaStatArg0 = {"Debug Level", iocshArgInt};
+static const iocshArg OpcUaStatArg0 = {"Verbosity Level", iocshArgInt};
 static const iocshArg *const OpcUaStatArg[1] = {&OpcUaStatArg0};
 iocshFuncDef OpcUaStatFuncDef = {"OpcUaStat", 1, OpcUaStatArg};
 void OpcUaStat (const iocshArgBuf *args )
