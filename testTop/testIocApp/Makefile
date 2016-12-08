@@ -34,18 +34,13 @@ OPCUAIOC_DBD += $(Standard_DBD)
 OPCUAIOC_DBD += opcUa.dbd
 
 OPCUAIOC_LIBS += $(EPICS_BASE_IOC_LIBS)
-OPCUAIOC_SYS_LIBS += crypto
-OPCUAIOC_SYS_LIBS += xml2
 OPCUAIOC_LIBS += opcUa
-OPCUAIOC_LIBS += uamodels
-OPCUAIOC_LIBS += uamodule
-OPCUAIOC_LIBS += coremodule
-OPCUAIOC_LIBS += uaclient
-OPCUAIOC_LIBS += uapki
-OPCUAIOC_LIBS += uabase
 OPCUAIOC_LIBS += uastack
-OPCUAIOC_LIBS += xmlparser
 
+# set rpath than the libraries can be found at your install location
+# check path with: 'readelf -d ../bin/linux-x86_64/OPCUAIOC'
+#
+USR_LDFLAGS += '-Wl,-rpath,/home/kuner/tmp/testUa'
 
 include $(TOP)/configure/RULES
 #----------------------------------------

@@ -20,7 +20,6 @@
 # CONFIG_SITE file.
 
 OPCUA=$(TOP)/..
-#OPCUA_UNIFIEDAUTOMATION=/srv/csr/Epics/sumo/build/OPCUA_UNIFIEDAUTOMATION/R0-8+HOBICAT-009
 
 # EPICS_BASE usually appears last so other apps can override stuff:
 
@@ -28,4 +27,5 @@ OPCUA=$(TOP)/..
 #EPICS_BASE=/srv/csr/Epics/sumo/build/BASE/R3-14-12-5-bessy4+BII-168
 
 # hazel
-EPICS_BASE=/opt/Epics/base-3.15.4
+EPICS_BASE=/opt/Epics/base-3.14.12.5
+#EPICS_BASE=/opt/Epics/base-3.15.4

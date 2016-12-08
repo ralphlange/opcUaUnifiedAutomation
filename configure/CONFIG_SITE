@@ -37,4 +37,4 @@ CROSS_COMPILER_TARGET_ARCHS =
 #UASDK = /opt/csr/uasdkDebian7
 
 # compile local ubuntu - need libcrypto
-UASDK = /home/kuner/Dokumente.BESSY/projects/opcProjekt/uasdk4.7.2-v1.5.1
+UASDK = /home/kuner/Dokumente.BESSY/projects/opcProjekt/uasdkcppclient-src-debian7.7-x86_64-gcc4.7.2-v1.5.3-346/sdk

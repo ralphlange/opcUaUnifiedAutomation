@@ -19,26 +19,27 @@ opcUa_SRCS = devOpcUa.c drvOpcUa.cpp devUaSubscription.cpp
 USR_SYS_LIBS += crypto
 USR_SYS_LIBS += xml2
 
-USR_LIBS += uastack
 uastack_DIR=$(UASDK)/lib
-
+USR_LIBS += uastack
 
 USR_INCLUDES += -I$(UASDK)/include/uabase
 USR_INCLUDES += -I$(UASDK)/include/uaclient
-USR_INCLUDES += -I$(UASDK)/include/uamodels
 USR_INCLUDES += -I$(UASDK)/include/uapki
-USR_INCLUDES += -I$(UASDK)/include/uaserver
 USR_INCLUDES += -I$(UASDK)/include/uastack
 USR_INCLUDES += -I$(UASDK)/include/xmlparser
 
 EXTLIB_INSTALLS += $(INSTALL_LIB)/libuastack.so
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuamodels.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuamodule.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libcoremodule.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuaclient.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuapki.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuabase.a
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libxmlparser.a
+
+opcUa_DIR = $(UASDK)/lib
+opcUa_LIBS += uaclient
+opcUa_LIBS += uapki
+opcUa_LIBS += uabase
+opcUa_LIBS += xmlparser
+
+# set rpath than the libraries can be found at your install location
+# check path with: 'readelf -d ../lib/linux-x86_64/libopcUa.so'
+#
+USR_LDFLAGS += '-Wl,-rpath,/home/kuner/tmp/testUa'
 
 include $(TOP)/configure/RULES
 #----------------------------------------
