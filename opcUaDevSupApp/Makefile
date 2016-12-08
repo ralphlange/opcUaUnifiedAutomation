@@ -36,11 +36,6 @@ opcUa_LIBS += uapki
 opcUa_LIBS += uabase
 opcUa_LIBS += xmlparser
 
-# set rpath than the libraries can be found at your install location
-# check path with: 'readelf -d ../lib/linux-x86_64/libopcUa.so'
-#
-USR_LDFLAGS += '-Wl,-rpath,/home/kuner/tmp/testUa'
-
 include $(TOP)/configure/RULES
 #----------------------------------------
 #  ADD RULES AFTER THIS LINE
