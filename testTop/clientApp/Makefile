@@ -9,9 +9,6 @@ CROSS_COMPILER_TARGET_ARCHS=
 
 STATIC_BUILD = NO
 
-#UASDK = /home/pc/kuner/ctl/OPC_UA/uasdkcppclient-src-debian7.7-x86_64-gcc4.7.2-v1.5.3-346/sdk
-UASDK = /home/kuner/Dokumente.BESSY/projects/opcProjekt/uasdkcppclient-src-debian7.7-x86_64-gcc4.7.2-v1.5.3-346/sdk
-
 PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
