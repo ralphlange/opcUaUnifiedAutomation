@@ -19,6 +19,7 @@
     Start with server: elbe:/home/pc/kuner/ctl/OPC_UA/uasdkDebian7/bin/server_lesson03
 **************************************************/
 #include <iostream>
+#include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
 // toolbox header
@@ -170,7 +171,7 @@ int main(int argc, char* argv[], char *envp[])
         printf("Client privat key:\n\t'%s'\n",g_applicationPrivateKey.toUtf8());
     }
 
-    result = opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,(GetNodeMode)modeOpt,verbose);
+    result = opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,(GetNodeMode)modeOpt,verbose);
     if(result)
     {
         printf("Error in opcUa_init()");

@@ -92,7 +92,7 @@ public:
 
     UaString applicationCertificate;
     UaString applicationPrivateKey;
-
+    UaString hostName;
     UaStatus connect(UaString url);
     UaStatus disconnect();
     UaStatus subscribe();
@@ -264,15 +264,9 @@ UaStatus DevUaClient::connect(UaString sURL)
 
     // Provide information about the client
     SessionConnectInfo sessionConnectInfo;
-    UaString sNodeName("unknown_host");
-    char szHostName[256];
-    if (0 == UA_GetHostname(szHostName, 256))
-    {
-        sNodeName = szHostName;
-    }
     sessionConnectInfo.sApplicationName = "HelmholtzgesellschaftBerlin Test Client";
     // Use the host name to generate a unique application URI
-    sessionConnectInfo.sApplicationUri  = UaString("urn:%1:HelmholtzgesellschaftBerlin:TestClient").arg(sNodeName);
+    sessionConnectInfo.sApplicationUri  = UaString("urn:%1:HelmholtzgesellschaftBerlin:TestClient").arg(hostName);
     sessionConnectInfo.sProductUri      = "urn:HelmholtzgesellschaftBerlin:TestClient";
     sessionConnectInfo.sSessionName     = sessionConnectInfo.sApplicationUri;
 
@@ -969,7 +963,7 @@ long setOPCUA_Item(OPCUA_ItemINFO *h)
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
-long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, GetNodeMode mode, int verbose=0)
+long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int verbose=0)
 {
     UaStatus status;
     // Initialize the UA Stack platform layer
@@ -980,9 +974,12 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
+    pMyClient->hostName = nodeName;
     pMyClient->mode = mode;
     pMyClient->debug = verbose;
     // Connect to OPC UA Server
+
+
     status = pMyClient->connect(g_serverUrl);
     if(status.isBad()) {
         printf("drvOpcUaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
@@ -1031,7 +1028,16 @@ void drvOpcUaSetup (const iocshArgBuf *args )
       errlogPrintf("drvOpcUaSetup: ABORT Missing Argument \"host name\".\n");
       return;
     }
-    g_defaultHostname = args[2].sval;
+
+    UaString sNodeName("unknown_host");
+    char szHostName[256];
+    if (0 == UA_GetHostname(szHostName, 256))
+    {
+        sNodeName = szHostName;
+    }
+    else 
+        if(strlen(args[2].sval) > 0)
+            sNodeName = args[2].sval;
 
     g_certificateStorePath = args[1].sval;
     g_mode = args[3].ival;
@@ -1053,7 +1059,7 @@ void drvOpcUaSetup (const iocshArgBuf *args )
         printf("Client privat key:\n\t'%s'\n",g_applicationPrivateKey.toUtf8());
     }
 
-    if(opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,(GetNodeMode)g_mode),verbose)
+    if(opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,sNodeName,(GetNodeMode)g_mode),verbose)
     {
         printf("Error in opcUa_init()");
         return;

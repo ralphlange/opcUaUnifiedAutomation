@@ -13,7 +13,7 @@ DBD = opcUa.dbd
 
 LIBRARY_HOST += opcUa
 opcUa_SRCS = devOpcUa.c drvOpcUa.cpp devUaSubscription.cpp
-
+INC += devOpcUa.h drvOpcUa.h
 ###
 
 USR_SYS_LIBS += crypto

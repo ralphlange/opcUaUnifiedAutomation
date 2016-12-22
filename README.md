@@ -62,38 +62,6 @@ Set in *configure/CONFIG_SITE* UASDK variable to your UA-SDK installation.
 * Server needs to be up when starting iocShell, but it will reconnect if server 
   is down for a while.
 
-## Define OpcUa Links
-
-### Find node by BrowsePath: 
-
-Define the path: Namespace Index followed by colon ':' and the BrowseName items 
-seperated by a dot, begining after the 'Root.Objects' node.
-```
-  2:NewObject.MyArrayVar
-```
-Some servers create node Identifiers by concatenating the BrowseNames. In this case
-it will be good to use the nodeId (see below) or there is the option to do 
-concatenation by the driver, set with an option of the client program, parameter
-on the drvOpcUaSetup() routine.
-
-### Find node by Id:
-
-Define the NodeId: Namespace Index followed by comma ',' and the Identifier.
-```
-  2,1004
-  2,S7.DB_RD.stHeartbeat
-```
-The client tool uses the same driver as the device support and is suited to test
-the server access.
-
-## Connection types
-
-OpcUa offers secure connections and the Unified Automation SDK supports this. It
-needs a certificate store to work. Up to now the device support doesn't offer a
-possibility to choose the servers endpoint, so just the anonymous connection is 
-supported. The certificate store path may be empty at initialisation . This will 
-be improved soon.
-  
 ## EPICS Database Examples:
 
 ```
@@ -140,7 +108,9 @@ record(ao,"REC:setProp"){
 }
 ```
 
-* Example for IOC setup by st.cmd file:
+## IOC setup Example
+
+* st.cmd file:
 
 ```
     #!../../bin/linux-x86_64/OPCUAIOC
@@ -150,7 +120,12 @@ record(ao,"REC:setProp"){
     dbLoadDatabase "dbd/OPCUAIOC.dbd",0,0
     ${IOC}_registerRecordDeviceDriver pdbbase
 
-    drvOpcUaSetup("opc.tcp://localhost:4841","/home/kuner/opcProjekt/certificates/hazel_store/certs","hazel",0)
+    # anonymous
+    drvOpcUaSetup("opc.tcp://localhost:4841","","",0,0)
+    
+    # With certificates and host. Certificated connection not supported now :-(
+    #drvOpcUaSetup("opc.tcp://localhost:4841","/home/kuner/opcProjekt/certificates/hazel_store/certs","hazel",0,0)
+    
     dbLoadRecords "db/freeopcuaTEST.db"
 
     OpcUaDebug(1)
@@ -158,3 +133,75 @@ record(ao,"REC:setProp"){
     iocInit
     OpcUaStat(0)
 ```
+
+## Define OpcUa Links
+
+### Find node by BrowsePath: 
+
+Define the path: Namespace Index followed by colon ':' and the BrowseName items 
+seperated by a dot, begining after the 'Root.Objects' node.
+```
+  2:NewObject.MyArrayVar
+```
+Some servers create node Identifiers by concatenating the BrowseNames. In this case
+it will be good to use the nodeId (see below) or there is the option to do 
+concatenation by the driver, set with an option of the client program, parameter
+on the drvOpcUaSetup() routine.
+
+### Find node by Id:
+
+Define the NodeId: Namespace Index followed by comma ',' and the Identifier.
+```
+  2,1004
+  2,S7.DB_RD.stHeartbeat
+```
+The client tool uses the same driver as the device support and is suited to test
+the server access.
+
+## Connection types
+
+OpcUa offers secure connections and the Unified Automation SDK supports this. It
+needs a certificate store to work. Up to now the device support doesn't offer a
+possibility to choose the servers endpoint, so just the anonymous connection is 
+supported. The certificate store path may be empty at initialisation . This will 
+be improved soon.
+  
+## Ioc Shell fuctions
+
+* drvOpcUaSetup:
+
+```
+    drvOpcUaSetup("opc.tcp://SERVER:PORT","CERTIFICATE_STORE","HOST",MODE,DEBUG)
+
+```
+
+  - SERVER:PORT: Mandatory
+  - CERTIFICATE_STORE: Optional. Not used now, just anonymous access supported
+  - HOST: Optional. Neccessary if UA_GetHostname() failes.
+  - MODE: How to interpret the opcUa links.
+    - BOTH=0: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
+    - NODEID=1
+    - BROWSEPATH=2
+    - BROWSEPATH_CONCAT=3: Means concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
+  - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
+
+* OpcUaDebug:
+
+```
+    OpcUaDebug(debugLevel)
+
+```
+
+Set verbosity level of the support module. To check single records set the record.TPRO field > 1 to 
+get specific debug information to this record.
+
+* OpcUaStat:
+
+```
+    OpcUaStat(verbosity)
+
+```
+
+Show all connections.
+
+

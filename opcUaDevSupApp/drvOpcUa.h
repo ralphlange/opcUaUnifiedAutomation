@@ -40,7 +40,7 @@ extern "C" {
     extern long OpcWriteValue(int opcUaItemIndex,double val,int verbose);
 #ifdef __cplusplus
 }
-    extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, GetNodeMode mode, int verbose);
+    extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int verbose);
 #endif
 
 #endif /* ifndef __DRVOPCUA_H */
