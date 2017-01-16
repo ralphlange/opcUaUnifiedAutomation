@@ -19,6 +19,7 @@
 #include "uasubscription.h"
 #include "uasession.h"
 #include <epicsTypes.h>
+#include <epicsPrint.h>
 #include <epicsTime.h>
 #include "dbScan.h"
 #include "devOpcUa.h"
@@ -44,7 +45,7 @@ void DevUaSubscription::subscriptionStatusChanged(
     const UaStatus&   status)
 {
     OpcUa_ReferenceParameter(clientSubscriptionHandle); // We use the callback only for this subscription
-    printf("Subscription not longer valid - failed with status %d (%s)\n",status.statusCode(), status.toString().toUtf8());
+    errlogPrintf("Subscription not longer valid - failed with status %d (%s)\n",status.statusCode(), status.toString().toUtf8());
 }
 void DevUaSubscription::dataChange(
     OpcUa_UInt32               clientSubscriptionHandle,
@@ -62,7 +63,7 @@ void DevUaSubscription::dataChange(
             epicsMutexLock(pOPCUA_ItemINFO->flagLock);
             if (! OpcUa_IsGood(dataNotifications[i].Value.StatusCode) )
             {
-                if(pOPCUA_ItemINFO->debug>= 2) printf("  Variable %d failed with status %s\n", dataNotifications[i].ClientHandle,
+                if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("  Variable %d failed with status %s\n", dataNotifications[i].ClientHandle,
                        UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8());
                 throw dataChangeError();
             }
@@ -77,7 +78,7 @@ void DevUaSubscription::dataChange(
                 UaUInt32Array aUInt32;
                 UaFloatArray  aFloat;
                 UaDoubleArray aDouble;
-                if(pOPCUA_ItemINFO->debug>= 2) printf("dataChange %s\t Array\n", pOPCUA_ItemINFO->prec->name);
+                if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("dataChange %s\t Array\n", pOPCUA_ItemINFO->prec->name);
 
                 if(val.arraySize() <= pOPCUA_ItemINFO->arraySize) {
                     switch(pOPCUA_ItemINFO->recDataType) {
@@ -112,39 +113,39 @@ void DevUaSubscription::dataChange(
                         memcpy(pOPCUA_ItemINFO->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*pOPCUA_ItemINFO->arraySize);
                         break;
                     default:
-                        if(pOPCUA_ItemINFO->debug>= 2) printf("%s dataChange: Can't convert data type\n",pOPCUA_ItemINFO->prec->name);
+                        if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("%s dataChange: Can't convert data type\n",pOPCUA_ItemINFO->prec->name);
                         throw dataChangeError();
                     }
                 }
                 else {
-                    printf("dataChange %s Error Record arraysize %d < OpcItem Size %d\n", pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
+                    errlogPrintf("dataChange %s Error Record arraysize %d < OpcItem Size %d\n", pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
                     throw dataChangeError();
                 }
             }      // end array
             else { // is no array
                 if( pOPCUA_ItemINFO->pInpVal ) { // is OUT Record
-                    if(pOPCUA_ItemINFO->debug>= 3) printf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
+                    if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
                         pOPCUA_ItemINFO->noOut = 1;
                         switch(pOPCUA_ItemINFO->inpDataType){ // Write direct to the records VAL field
                             case epicsInt32T:
                                 val.toInt32( *((epicsInt32*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsInt32T recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32T recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsUInt32T:
                                 val.toUInt32( *((epicsUInt32*)pOPCUA_ItemINFO->pInpVal));
-                                if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsUInt32T recVal: %d\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32T recVal: %d\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsFloat64T:
                                 val.toDouble( *((epicsFloat64*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsFloat64T recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64T recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsOldStringT:
                                 strncpy((char*)pOPCUA_ItemINFO->pInpVal,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                                if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                                 break;
                         default:
-                            if(pOPCUA_ItemINFO->debug>= 3) printf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
                             throw dataChangeError();
                         }
                         callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
@@ -154,26 +155,26 @@ void DevUaSubscription::dataChange(
                     }
                 }
                 else {// is IN Record
-                    if(pOPCUA_ItemINFO->debug>= 2) printf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
+                    if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     switch(pOPCUA_ItemINFO->recDataType){ // Write to the OPCUA_ItemINFO variant, record processing will get the value when processing
                         case epicsInt32T:
                             val.toInt32( (pOPCUA_ItemINFO->varVal).Int32 );
-                            if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
                             break;
                         case epicsUInt32T:
                             val.toUInt32( (pOPCUA_ItemINFO->varVal).UInt32);
-                            if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsUInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).UInt32);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).UInt32);
                             break;
                         case epicsFloat64T:
                             val.toDouble( (pOPCUA_ItemINFO->varVal).Double);
-                            if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsFloat64T opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64T opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
                             break;
                         case epicsOldStringT:
                             strncpy((pOPCUA_ItemINFO->varVal).cString,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                            if(pOPCUA_ItemINFO->debug>= 3) printf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                             break;
                     default:
-                        if(pOPCUA_ItemINFO->debug>= 3) printf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
+                        if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
                         throw dataChangeError();
                     }
                     if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
@@ -188,7 +189,7 @@ void DevUaSubscription::dataChange(
 
             epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
             if(pOPCUA_ItemINFO->debug>= 4)
-                    printf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
+                    errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
                        pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
                        pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
                        pOPCUA_ItemINFO->noOut);
@@ -215,7 +216,7 @@ void setTimestamp(OPCUA_ItemINFO * pOPCUA_ItemINFO, const UaDateTime &dt)
         epicsTimeGetCurrent(&ts);
         epicsTimeToStrftime(currentBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&ts);
         epicsTimeToStrftime(timeBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&(prec->time));
-        if(pOPCUA_ItemINFO->debug>= 4) printf("setTimestamp: Curr:%s TST:%d Server:%s recTIME:%s\n",currentBuffer,prec->tse,dt.toString().toUtf8(),timeBuffer);
+        if(pOPCUA_ItemINFO->debug>= 4) errlogPrintf("setTimestamp: Curr:%s TST:%d Server:%s recTIME:%s\n",currentBuffer,prec->tse,dt.toString().toUtf8(),timeBuffer);
     }
 }
 
@@ -225,14 +226,14 @@ void DevUaSubscription::newEvents(
 {
     OpcUa_ReferenceParameter(clientSubscriptionHandle);
     OpcUa_ReferenceParameter(eventFieldList);
-    printf("DevUaSubscription::newEvents called\n");
+    errlogPrintf("DevUaSubscription::newEvents called\n");
 }
 
 UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
 {
     if ( m_pSubscription )
     {
-        printf("\nError: Subscription already created\n");
+        errlogPrintf("\nError: Subscription already created\n");
         return OpcUa_BadInvalidState;
     }
     m_pSession = pSession;
@@ -240,7 +241,7 @@ UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
     ServiceSettings serviceSettings;
     SubscriptionSettings subscriptionSettings;
     subscriptionSettings.publishingInterval = 100;
-    if(debug) printf("\nCreating subscription\n");
+    if(debug) errlogPrintf("\nCreating subscription\n");
     result = pSession->createSubscription(
         serviceSettings,
         this,
@@ -251,7 +252,7 @@ UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
     if (result.isBad())
     {
         m_pSubscription = NULL;
-        printf("CreateSubscription failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("CreateSubscription failed with status %s\n", result.toString().toUtf8());
     }
     return result;
 }
@@ -259,7 +260,7 @@ UaStatus DevUaSubscription::deleteSubscription()
 {
     if ( m_pSubscription == NULL )
     {
-        printf("\nError: No Subscription created\n");
+        errlogPrintf("\nError: No Subscription created\n");
         return OpcUa_BadInvalidState;
     }
     UaStatus result;
@@ -270,7 +271,7 @@ UaStatus DevUaSubscription::deleteSubscription()
         &m_pSubscription);
     if (result.isBad())
     {
-        printf("DevUaSubscription::deleteSubscription failed with status '%s'\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::deleteSubscription failed with status '%s'\n", result.toString().toUtf8());
     }
     m_pSubscription = NULL;
     return result;
@@ -278,17 +279,17 @@ UaStatus DevUaSubscription::deleteSubscription()
 
 UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *uaItemInfo)
 {
-    if(debug) printf("DevUaSubscription::createMonitoredItems DevUaSubscription::createMonitoredItems\n");
+    if(debug) errlogPrintf("DevUaSubscription::createMonitoredItems DevUaSubscription::createMonitoredItems\n");
     if ( m_pSubscription == NULL )
     {
-        printf("\nDevUaSubscription::createMonitoredItems Error: missing subscription\n");
+        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: missing subscription\n");
         return OpcUa_BadInvalidState;
     }
     if( uaItemInfo->size() == vUaNodeId.size())
         m_vectorUaItemInfo = uaItemInfo;
     else
     {
-        printf("\nDevUaSubscription::createMonitoredItems Error: Nr of uaItems %i != nr of browsepathItems %i\n",(int)uaItemInfo->size(),(int)vUaNodeId.size());
+        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: Nr of uaItems %i != nr of browsepathItems %i\n",(int)uaItemInfo->size(),(int)vUaNodeId.size());
         return OpcUa_BadInvalidState;
     }
 
@@ -312,10 +313,10 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
             itemsToCreate[i].MonitoringMode = OpcUa_MonitoringMode_Reporting;
         }
         else {
-            printf("%s Skip illegal node: %s\n",uaItemInfo->at(i)->prec->name,uaItemInfo->at(i)->ItemPath);
+            errlogPrintf("%s Skip illegal node: %s\n",uaItemInfo->at(i)->prec->name,uaItemInfo->at(i)->ItemPath);
         }
     }
-    if(debug) printf("\nAdding monitored items to subscription ...\n");
+    if(debug) errlogPrintf("\nAdding monitored items to subscription ...\n");
     result = m_pSubscription->createMonitoredItems(
         serviceSettings,
         OpcUa_TimestampsToReturn_Both,
@@ -328,12 +329,12 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
         {
             if (OpcUa_IsGood(createResults[i].StatusCode))
             {
-                if(debug) printf("CreateMonitoredItems succeeded for item: %s\n",
+                if(debug) errlogPrintf("CreateMonitoredItems succeeded for item: %s\n",
                     UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8());
             }
             else
             {
-                printf("DevUaSubscription::createMonitoredItems failed for item: %s - Status %s\n",
+                errlogPrintf("DevUaSubscription::createMonitoredItems failed for item: %s - Status %s\n",
                     UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8(),
                     UaStatus(createResults[i].StatusCode).toString().toUtf8());
             }
@@ -341,7 +342,7 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     }
     else
     {
-        printf("DevUaSubscription::createMonitoredItems service call failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::createMonitoredItems service call failed with status %s\n", result.toString().toUtf8());
     }
     return result;
 }

@@ -261,7 +261,7 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
         callbackSetCallback(outRecordCallback, &(pOPCUA_ItemINFO->callback));
         callbackSetUser(prec, &(pOPCUA_ItemINFO->callback));
     }
-//  printf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
+//  errlogPrintf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
     return 0;
 }
 
@@ -476,12 +476,12 @@ long read_ai (struct aiRecord* prec)
             else {
                 prec->val = newVal;
             }
-            if(DEBUG_LEVEL>= 3) printf("read_ai %s\tbuffer: %f VAL:%f ret: 2 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,newVal,prec->val,prec->linr,&(prec->val),&(prec->rval));
+            if(DEBUG_LEVEL>= 3) errlogPrintf("read_ai %s\tbuffer: %f VAL:%f ret: 2 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,newVal,prec->val,prec->linr,&(prec->val),&(prec->rval));
             ret = 2;
         }
         else {
             prec->rval = (pOPCUA_ItemINFO->varVal).Int32;
-            if(DEBUG_LEVEL>= 3) printf("read_ai %s\tbuffer: %d RVAL:%d VAL%f ret: 0 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,(pOPCUA_ItemINFO->varVal).Int32,prec->rval,prec->val,prec->linr,&(prec->val),&(prec->rval));
+            if(DEBUG_LEVEL>= 3) errlogPrintf("read_ai %s\tbuffer: %d RVAL:%d VAL%f ret: 0 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,(pOPCUA_ItemINFO->varVal).Int32,prec->rval,prec->val,prec->linr,&(prec->val),&(prec->rval));
         }
     }
     epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
