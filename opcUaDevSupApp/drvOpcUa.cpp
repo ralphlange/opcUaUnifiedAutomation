@@ -791,7 +791,7 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
 epicsRegisterFunction(OpcUaWriteItems);
 long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
 {
-    UaStatus            status;
+    UaStatus            status=0;
     ServiceSettings     serviceSettings;    // Use default settings
     UaVariant           tempValue;
     UaWriteValues       nodesToWrite;       // Array of nodes to write
@@ -805,13 +805,30 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
     nodesToWrite[0].AttributeId = OpcUa_Attributes_Value;
 
     switch((int)pOPCUA_ItemINFO->itemDataType){
+    case OpcUaType_Boolean:
+        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:
+        case epicsUInt32T:  if( 0 != *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal) )
+                                tempValue.setBool(true);
+                            else
+                                tempValue.setBool(false);
+                            break;
+        case epicsFloat64T:  if( *((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal) == 0.0 ) /* is this reasonable?? or better don't support double */
+                                tempValue.setBool(false);
+                            else
+                                tempValue.setBool(true);
+                            break;
+
+        default: return 1;
+        }
+        break;
     case OpcUaType_SByte:
 
         switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_Byte:
@@ -819,7 +836,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_Int16:
@@ -827,7 +844,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_UInt16:
@@ -835,7 +852,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_Int32:
@@ -843,7 +860,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_UInt32:
@@ -851,7 +868,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_Float:
@@ -859,7 +876,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_Double:
@@ -867,7 +884,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
-        default: return 1;
+        default: status = 1;
         }
         break;
     case OpcUaType_String:
@@ -876,15 +893,19 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         }
         break;
     default:
-        errlogPrintf("%s\tOpcUaWriteItems ERROR: unsupported epics data type: '%s'", pOPCUA_ItemINFO->prec->name, epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+        errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
     }
-//  PSIRX003GP:PLC:cmdRst	OpcUaWriteItems ERROR: unsupported epics data type: epicsUInt32
+    if(status == 1) {
+        errlogPrintf("%s\tOpcUaWriteItems: unsupported record data type: '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+        return 1;
+    }
+
     tempValue.copyTo(&nodesToWrite[0].Value.Value);
 
     status = pMyClient->writeFunc(serviceSettings,nodesToWrite,results,diagnosticInfos);
     if ( status.isBad() )
     {
-        errlogPrintf("** Error: UaSession::write failed [ret=%s] **\n", status.toString().toUtf8());
+        errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",pOPCUA_ItemINFO->prec->name,status.toString().toUtf8());
         return 1;
     }
     return 0;

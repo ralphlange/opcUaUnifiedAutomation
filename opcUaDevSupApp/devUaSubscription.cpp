@@ -130,22 +130,22 @@ void DevUaSubscription::dataChange(
                         switch(pOPCUA_ItemINFO->inpDataType){ // Write direct to the records VAL field
                             case epicsInt32T:
                                 val.toInt32( *((epicsInt32*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32T recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsUInt32T:
                                 val.toUInt32( *((epicsUInt32*)pOPCUA_ItemINFO->pInpVal));
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32T recVal: %d\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsFloat64T:
                                 val.toDouble( *((epicsFloat64*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64T recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64 recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsOldStringT:
                                 strncpy((char*)pOPCUA_ItemINFO->pInpVal,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
                                 if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                                 break;
                         default:
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
+                            errlogPrintf("%s\tdataChange: unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
                             throw dataChangeError();
                         }
                         callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
@@ -159,22 +159,22 @@ void DevUaSubscription::dataChange(
                     switch(pOPCUA_ItemINFO->recDataType){ // Write to the OPCUA_ItemINFO variant, record processing will get the value when processing
                         case epicsInt32T:
                             val.toInt32( (pOPCUA_ItemINFO->varVal).Int32 );
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
                             break;
                         case epicsUInt32T:
                             val.toUInt32( (pOPCUA_ItemINFO->varVal).UInt32);
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32T opcVal: %d\n",(pOPCUA_ItemINFO->varVal).UInt32);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 opcVal: %u\n",(pOPCUA_ItemINFO->varVal).UInt32);
                             break;
                         case epicsFloat64T:
                             val.toDouble( (pOPCUA_ItemINFO->varVal).Double);
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64T opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64 opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
                             break;
                         case epicsOldStringT:
                             strncpy((pOPCUA_ItemINFO->varVal).cString,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
+                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldString opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                             break;
                     default:
-                        if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tdataChange: illegal recDataType %d\n",pOPCUA_ItemINFO->recDataType);
+                        errlogPrintf("%s\tdataChange: unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
                         throw dataChangeError();
                     }
                     if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
