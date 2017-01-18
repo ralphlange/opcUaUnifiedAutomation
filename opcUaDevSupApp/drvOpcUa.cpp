@@ -931,9 +931,8 @@ long OpcUaSetupMonitors(void)
     }
     if(pMyClient->debug) errlogPrintf("OpcUaSetupMonitors Read values ok nr = %i\n",values.length());
     for(OpcUa_UInt32 j=0;j<values.length();j++) {
-
+        OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[j];
         if (OpcUa_IsGood(values[j].StatusCode)) {
-            OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[j];
             if(values[j].Value.ArrayType && !pOPCUA_ItemINFO->isArray) {
                  errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",pOPCUA_ItemINFO->prec->name);
             }
@@ -943,12 +942,14 @@ long OpcUaSetupMonitors(void)
                 epicsMutexLock(pOPCUA_ItemINFO->flagLock);
                 pOPCUA_ItemINFO->isArray = 0;
                 epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-                if(pMyClient->debug) errlogPrintf("%3d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
+                if(pMyClient->debug) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
 
             }
         }
         else {
-            errlogPrintf("Read item[%i] failed with status %s\n",j,UaStatus(values[j].StatusCode).toString().toUtf8());
+            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",pOPCUA_ItemINFO->itemIdx,
+                         pOPCUA_ItemINFO->prec->name, pOPCUA_ItemINFO->ItemPath,
+                         UaStatus(values[j].StatusCode).toString().toUtf8());
         }
     }
     pMyClient->createMonitoredItems();
