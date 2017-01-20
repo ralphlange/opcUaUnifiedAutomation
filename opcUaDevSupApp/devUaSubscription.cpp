@@ -292,6 +292,11 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
         errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: Nr of uaItems %i != nr of browsepathItems %i\n",(int)uaItemInfo->size(),(int)vUaNodeId.size());
         return OpcUa_BadInvalidState;
     }
+    if(false == m_pSession->isConnected() ) {
+        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: session not connected\n");
+        return OpcUa_BadInvalidState;
+
+    }
 
     UaStatus result;
     OpcUa_UInt32 i;

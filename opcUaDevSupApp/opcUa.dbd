@@ -15,18 +15,8 @@ device(stringin,   INST_IO, devstringinOpcUa,	"OPCUA")
 device(stringout,  INST_IO, devstringoutOpcUa,  "OPCUA")
 device(waveform,   INST_IO, devwaveformOpcUa,  "OPCUA")
 
-function(drvOpcUaSetup)
-function(OpcUaDebug)
+function(drvOpcuaSetup)
+function(opcuaDebug)
 function(OpcUaSetupMonitors)
-#function(OpcUaAddSubs)
-#function(OpcUaReadItems)
 function(OpcUaWriteItems)
-#function(createEventMonitoredItems)
 function(opcUa_io_report)
-
-#function(opcUa_setFloat)
-#function(opcUa_setUnsignedShort)
-#function(opcUa_setUnsignedLong)
-#function(opcUa_getFloat)
-
-

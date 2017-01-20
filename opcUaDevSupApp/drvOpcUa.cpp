@@ -26,6 +26,7 @@
 #define epicsTypesGLOBAL
 #include <epicsTypes.h>
 #include <epicsPrint.h>
+#include <epicsTime.h>
 #include <epicsExport.h>
 #include <registryFunction.h>
 #include <dbCommon.h>
@@ -185,21 +186,26 @@ DevUaClient::~DevUaClient()
     }
 }
 
-
 void DevUaClient::connectionStatusChanged(
     OpcUa_UInt32             clientConnectionId,
     UaClient::ServerStatus   serverStatus)
 {
+    char currentBuffer[30];
+    epicsTimeStamp ts;
+    epicsTimeGetCurrent(&ts);
+    epicsTimeToStrftime(currentBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&ts);
+
     OpcUa_ReferenceParameter(clientConnectionId);
 
+    errlogPrintf("%s opcUaClient: Connection status changed to: ",currentBuffer);
     switch (serverStatus)
     {
     case UaClient::Disconnected:
-        errlogPrintf("Connection status changed to Disconnected %d\n",serverStatus);
+        errlogPrintf("Disconnected %d\n",serverStatus);
         connectionStatusStored = UaClient::Disconnected;
         break;
     case UaClient::Connected:
-        errlogPrintf("opcUaClient: Connection status changed to Connected %d\n",serverStatus);
+        errlogPrintf("Connected %d\n",serverStatus);
         if(connectionStatusStored == UaClient::ConnectionErrorApiReconnect) {
             this->unsubscribe();
             this->subscribe();
@@ -209,27 +215,28 @@ void DevUaClient::connectionStatusChanged(
         connectionStatusStored = UaClient::Connected;
         break;
     case UaClient::ConnectionWarningWatchdogTimeout:
-        errlogPrintf("UaClientConnection status changed to ConnectionWarningWatchdogTimeout %d\n",serverStatus);
+        errlogPrintf("ConnectionWarningWatchdogTimeout %d\n",serverStatus);
         connectionStatusStored = UaClient::ConnectionWarningWatchdogTimeout;
         this->setBadQuality();
         break;
     case UaClient::ConnectionErrorApiReconnect:
-        errlogPrintf("UaClientConnection status changed to ConnectionErrorApiReconnect %d\n",serverStatus);
+        errlogPrintf("ConnectionErrorApiReconnect %d\n",serverStatus);
         connectionStatusStored = UaClient::ConnectionErrorApiReconnect;
         this->setBadQuality();
         break;
     case UaClient::ServerShutdown:
-        errlogPrintf("UaClientConnection status changed to ServerShutdown %d\n",serverStatus);
+        errlogPrintf("ServerShutdown %d\n",serverStatus);
         connectionStatusStored = UaClient::ServerShutdown;
         this->setBadQuality();
         break;
     case UaClient::NewSessionCreated:
-        errlogPrintf("opcUaClient: Connection status changed to NewSessionCreated %d\n",serverStatus);
+        errlogPrintf("NewSessionCreated %d\n",serverStatus);
         connectionStatusStored = UaClient::NewSessionCreated;
         break;
     }
 }
 
+// Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
 void DevUaClient::setBadQuality()
 {
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
@@ -279,6 +286,7 @@ UaStatus DevUaClient::connect(UaString sURL)
 
     if (result.isBad())
     {
+        connectionStatusStored = UaClient::Disconnected;
         errlogPrintf("Connect failed with status %s\n", result.toString().toUtf8());
     }
 
@@ -326,8 +334,8 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
     std::string             partPath;
 
-    if(debug) errlogPrintf("DevUaClient::getAllNodesFromBrowsePath mode:%d",mode);
-    errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++)        errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
+    if(debug)   errlogPrintf("DevUaClient::getAllNodesFromBrowsePath()");
+    if(debug>1) errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++)        errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
     browsePaths.create(itemCount);
     for(bpItem=0;bpItem<itemCount;bpItem++) {
         std::vector<std::string> devpath; // parsed item path
@@ -516,7 +524,7 @@ long DevUaClient::getAllNodesFromId()
 
     nrOfItems = vUaItemInfo.size();
     nodeToRead.create(nrOfItems);
-
+    if(debug) errlogPrintf("DevUaClient::getAllNodesFromId()");
     for(OpcUa_UInt32 i=0;i<nrOfItems;i++) {
         OPCUA_ItemINFO      *pOPCUA_ItemINFO;
         UaNodeId            tempNode;
@@ -558,8 +566,11 @@ long DevUaClient::getNodes()
     UaStatus status;
     int ret=0;
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
-    if(debug) errlogPrintf("DevUaClient::getNodes mode:%d\n",mode);
     vUaNodeId.clear();
+    if(false == m_pSession->isConnected() ) {
+         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected\n");
+         return 1;
+    }
     switch(mode) {
     case BOTH:
         errlogPrintf("DevUaClient::getNodes(BOTH)\n");
@@ -662,11 +673,11 @@ void DevUaClient::itemStat(int verb)
 {
     errlogPrintf("OpcUa driver: Connected items: %lu\n",vUaItemInfo.size());
     if(verb>0) {
-        if(verb==1) errlogPrintf("Only bad signals");
+        if(verb==1) errlogPrintf("Only bad signals\n");
         errlogPrintf("idx record Name          NS:PATH                                                       epics Type         opcUa Type        CB Out\n");
         for(unsigned int i=0;i< vUaItemInfo.size();i++) {
             OPCUA_ItemINFO* pOPCUA_ItemINFO = vUaItemInfo[i];
-            if((verb>1) || ((verb>0)&&(pOPCUA_ItemINFO->stat==0)))  // verb=1 only the bad, verb>1 all
+            if((verb>1) || ((verb==1)&&(pOPCUA_ItemINFO->stat==1)))  // verb=1 only the bad, verb>1 all
                 errlogPrintf("%3d %-20s %-60s %2d,%-15s %2d:%-15s stat=%d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
                    pOPCUA_ItemINFO->ItemPath,
                    pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
@@ -1003,27 +1014,27 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 
     status = pMyClient->connect(g_serverUrl);
     if(status.isBad()) {
-        errlogPrintf("drvOpcUaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
         return 1;
     }
     // Create subscription
     status = pMyClient->subscribe();
     if(status.isBad()) {
-        errlogPrintf("drvOpcUaSetup: Failed to subscribe on server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to subscribe on server '%s'' \n",g_serverUrl.toUtf8());
         return 1;
     }
     return 0;
 }
 /* iocShell: shell functions */
 
-static const iocshArg drvOpcUaSetupArg0 = {"[URL] to server", iocshArgString};
-static const iocshArg drvOpcUaSetupArg1 = {"[CERT_PATH] optional", iocshArgString};
-static const iocshArg drvOpcUaSetupArg2 = {"[HOST] optional", iocshArgString};
-static const iocshArg drvOpcUaSetupArg3 = {"MODE: BOTH=0,NODEID=1,BROWSEPATH=2,BROWSEPATH_CONCAT=3", iocshArgInt};
-static const iocshArg drvOpcUaSetupArg4 = {"Debug Level for library", iocshArgInt};
-static const iocshArg *const drvOpcUaSetupArg[5] = {&drvOpcUaSetupArg0,&drvOpcUaSetupArg1,&drvOpcUaSetupArg2,&drvOpcUaSetupArg3,&drvOpcUaSetupArg4};
-iocshFuncDef drvOpcUaSetupFuncDef = {"drvOpcUaSetup", 5, drvOpcUaSetupArg};
-void drvOpcUaSetup (const iocshArgBuf *args )
+static const iocshArg drvOpcuaSetupArg0 = {"[URL] to server", iocshArgString};
+static const iocshArg drvOpcuaSetupArg1 = {"[CERT_PATH] optional", iocshArgString};
+static const iocshArg drvOpcuaSetupArg2 = {"[HOST] optional", iocshArgString};
+static const iocshArg drvOpcuaSetupArg3 = {"MODE: BOTH=0,NODEID=1,BROWSEPATH=2,BROWSEPATH_CONCAT=3", iocshArgInt};
+static const iocshArg drvOpcuaSetupArg4 = {"Debug Level for library", iocshArgInt};
+static const iocshArg *const drvOpcuaSetupArg[5] = {&drvOpcuaSetupArg0,&drvOpcuaSetupArg1,&drvOpcuaSetupArg2,&drvOpcuaSetupArg3,&drvOpcuaSetupArg4};
+iocshFuncDef drvOpcuaSetupFuncDef = {"drvOpcuaSetup", 5, drvOpcuaSetupArg};
+void drvOpcuaSetup (const iocshArgBuf *args )
 {
     UaString g_serverUrl;
     UaString g_certificateStorePath;
@@ -1034,19 +1045,19 @@ void drvOpcUaSetup (const iocshArgBuf *args )
 
     if(args[0].sval == NULL)
     {
-      errlogPrintf("drvOpcUaSetup: ABORT Missing Argument \"url\".\n");
+      errlogPrintf("drvOpcuaSetup: ABORT Missing Argument \"url\".\n");
       return;
     }
     g_serverUrl = args[0].sval;
     if(args[1].sval == NULL)
     {
-      errlogPrintf("drvOpcUaSetup: ABORT Missing Argument \"cert path\".\n");
+      errlogPrintf("drvOpcuaSetup: ABORT Missing Argument \"cert path\".\n");
       return;
     }
     g_certificateStorePath = args[1].sval;
     if(args[2].sval == NULL)
     {
-      errlogPrintf("drvOpcUaSetup: ABORT Missing Argument \"host name\".\n");
+      errlogPrintf("drvOpcuaSetup: ABORT Missing Argument \"host name\".\n");
       return;
     }
 
@@ -1063,7 +1074,7 @@ void drvOpcUaSetup (const iocshArgBuf *args )
     g_certificateStorePath = args[1].sval;
     g_mode = args[3].ival;
     if( (g_mode<0)||(g_mode >= GETNODEMODEMAX)) {
-        errlogPrintf("drvOpcUaSetup: parameter mode=%d: outside range, set to default: Browsepath or nodeId (BOTH)\n",g_mode);
+        errlogPrintf("drvOpcuaSetup: parameter mode=%d: outside range, set to default: Browsepath or nodeId (BOTH)\n",g_mode);
         g_mode = 0;
     }
     int verbose = args[4].ival;
@@ -1086,12 +1097,12 @@ void drvOpcUaSetup (const iocshArgBuf *args )
         return;
     }
 }
-epicsRegisterFunction(drvOpcUaSetup);
+epicsRegisterFunction(drvOpcuaSetup);
 
-static const iocshArg OpcUaDebugArg0 = {"Debug Level for library", iocshArgInt};
-static const iocshArg *const OpcUaDebugArg[1] = {&OpcUaDebugArg0};
-iocshFuncDef OpcUaDebugFuncDef = {"OpcUaDebug", 1, OpcUaDebugArg};
-void OpcUaDebug (const iocshArgBuf *args )
+static const iocshArg opcuaDebugArg0 = {"Debug Level for library", iocshArgInt};
+static const iocshArg *const opcuaDebugArg[1] = {&opcuaDebugArg0};
+iocshFuncDef opcuaDebugFuncDef = {"opcuaDebug", 1, opcuaDebugArg};
+void opcuaDebug (const iocshArgBuf *args )
 {
     if(pMyClient)
         pMyClient->debug = args[0].ival;
@@ -1099,17 +1110,17 @@ void OpcUaDebug (const iocshArgBuf *args )
         errlogPrintf("Ignore: OpcUa not initialized\n");
     return;
 }
-epicsRegisterFunction(OpcUaDebug);
+epicsRegisterFunction(opcuaDebug);
 
-static const iocshArg OpcUaStatArg0 = {"Verbosity Level", iocshArgInt};
-static const iocshArg *const OpcUaStatArg[1] = {&OpcUaStatArg0};
-iocshFuncDef OpcUaStatFuncDef = {"OpcUaStat", 1, OpcUaStatArg};
-void OpcUaStat (const iocshArgBuf *args )
+static const iocshArg opcuaStatArg0 = {"Verbosity Level", iocshArgInt};
+static const iocshArg *const opcuaStatArg[1] = {&opcuaStatArg0};
+iocshFuncDef opcuaStatFuncDef = {"opcuaStat", 1, opcuaStatArg};
+void opcuaStat (const iocshArgBuf *args )
 {
     pMyClient->itemStat(args[0].ival);
     return;
 }
-epicsRegisterFunction(OpcUaStat);
+epicsRegisterFunction(opcuaStat);
 
 //create a static object to make shure that opcRegisterToIocShell is called on beginning of
 class OpcRegisterToIocShell
@@ -1120,9 +1131,9 @@ public :
 
 OpcRegisterToIocShell::OpcRegisterToIocShell(void)
 {
-    iocshRegister(&drvOpcUaSetupFuncDef, drvOpcUaSetup);
-    iocshRegister(&OpcUaDebugFuncDef, OpcUaDebug);
-    iocshRegister(&OpcUaStatFuncDef, OpcUaStat);
+    iocshRegister(&drvOpcuaSetupFuncDef, drvOpcuaSetup);
+    iocshRegister(&opcuaDebugFuncDef, opcuaDebug);
+    iocshRegister(&opcuaStatFuncDef, opcuaStat);
       //
 }
 static OpcRegisterToIocShell opcRegisterToIocShell;
