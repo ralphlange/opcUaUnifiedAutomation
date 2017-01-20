@@ -394,7 +394,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     char            ItemPath[ITEMPATHLEN];
     char            *endptr;
 
-    if(debug) errlogPrintf("DevUaClient::getNodeFromBrowsePath\n");
+    if(debug>1) errlogPrintf("DevUaClient::getNodeFromBrowsePath\n");
     pOPCUA_ItemINFO = vUaItemInfo[bpItem];
  
     std::vector<std::string> itempath; // parsed item path
@@ -404,7 +404,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     NdIdx = (OpcUa_UInt16) strtol(itempath[0].c_str(),&endptr,10); // ItemPath is nodeId
     strncpy(ItemPath,itempath[1].c_str(),ITEMPATHLEN);
 
-    if(debug) errlogPrintf("\tparsed NS:%hu PATH: %s\n",NdIdx,ItemPath);
+    if(debug>1) errlogPrintf("\tparsed NS:%hu PATH: %s\n",NdIdx,ItemPath);
     UaDiagnosticInfos       diagnosticInfos;
     ServiceSettings         serviceSettings;
     UaRelativePathElements  pathElements;
@@ -419,7 +419,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     browsePaths[0].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
     pathElements.create(lenPath);
     for(int i=0; i<lenPath;i++){
-        if(debug) errlogPrintf("%s|",devpath[i].c_str());
+        if(debug>1) errlogPrintf("%s|",devpath[i].c_str());
 
         pathElements[i].IncludeSubtypes = OpcUa_True;
         pathElements[i].IsInverse       = OpcUa_False;
@@ -435,7 +435,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     }
     browsePaths[0].RelativePath.NoOfElements = pathElements.length();
     browsePaths[0].RelativePath.Elements = pathElements.detach();
-    if(debug) errlogPrintf("\n");
+    if(debug>1) errlogPrintf("\n");
 
     status = m_pSession->translateBrowsePathsToNodeIds(
         serviceSettings, // Use default settings
@@ -443,7 +443,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
         browsePathResults,
         diagnosticInfos);
 
-    if(debug) errlogPrintf("DONE translateBrowsePathsToNodeIds: %s len=%d\n",status.toString().toUtf8(),browsePathResults.length());
+    if(debug>1) errlogPrintf("DONE translateBrowsePathsToNodeIds: %s len=%d\n",status.toString().toUtf8(),browsePathResults.length());
 
     if( (browsePathResults.length() == 1) && ( OpcUa_IsGood(browsePathResults[0].StatusCode) )) {
         UaNodeId tempNode(browsePathResults[0].Targets[0].TargetId.NodeId);
@@ -489,7 +489,7 @@ long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
     else            // is string id
         tempNode.setNodeId(UaString(ItemId), NdIdx);
 
-    errlogPrintf("SETUP NODE: '%s' Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
+    if(debug>1) errlogPrintf("SETUP NODE: '%s' Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
     nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
     tempNode.copyTo(&(nodeToRead[0].NodeId)) ;
 
@@ -538,7 +538,7 @@ long DevUaClient::getAllNodesFromId()
             tempNode.setNodeId( itemId, NdIdx);
         else            // is string id
             tempNode.setNodeId(UaString(ItemId), NdIdx);
-        errlogPrintf("SETUP NODE '%s': Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
+        if(debug>1) errlogPrintf("SETUP NODE '%s': Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
         nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
         tempNode.copyTo(&(nodeToRead[i].NodeId)) ;
         vUaNodeId.push_back(tempNode);
@@ -662,10 +662,12 @@ void DevUaClient::itemStat(int verb)
 {
     errlogPrintf("OpcUa driver: Connected items: %lu\n",vUaItemInfo.size());
     if(verb>0) {
+        if(verb==1) errlogPrintf("Only bad signals");
         errlogPrintf("idx record Name          NS:PATH                                                       epics Type         opcUa Type        CB Out\n");
         for(unsigned int i=0;i< vUaItemInfo.size();i++) {
             OPCUA_ItemINFO* pOPCUA_ItemINFO = vUaItemInfo[i];
-            errlogPrintf("%3d %-20s %-60s %2d,%-15s %2d:%-15s stat=%d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
+            if((verb>1) || ((verb>0)&&(pOPCUA_ItemINFO->stat==0)))  // verb=1 only the bad, verb>1 all
+                errlogPrintf("%3d %-20s %-60s %2d,%-15s %2d:%-15s stat=%d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
                    pOPCUA_ItemINFO->ItemPath,
                    pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
                    pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
@@ -723,7 +725,7 @@ long OpcReadValues(int verbose,int monitored)
 
     if(verbose){
         errlogPrintf("OpcReadValues\n");
-        pMyClient->debug = 1;
+        pMyClient->debug = verbose;
     }
     if(pMyClient->getNodes() ) {
         errlogPrintf("\n");
@@ -1014,11 +1016,11 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 }
 /* iocShell: shell functions */
 
-static const iocshArg drvOpcUaSetupArg0 = {"[URL]", iocshArgString};
-static const iocshArg drvOpcUaSetupArg1 = {"[CERT_PATH]", iocshArgString};
-static const iocshArg drvOpcUaSetupArg2 = {"[HOST]", iocshArgString};
-static const iocshArg drvOpcUaSetupArg3 = {"[MODE]", iocshArgInt};
-static const iocshArg drvOpcUaSetupArg4 = {"Debug Level", iocshArgInt};
+static const iocshArg drvOpcUaSetupArg0 = {"[URL] to server", iocshArgString};
+static const iocshArg drvOpcUaSetupArg1 = {"[CERT_PATH] optional", iocshArgString};
+static const iocshArg drvOpcUaSetupArg2 = {"[HOST] optional", iocshArgString};
+static const iocshArg drvOpcUaSetupArg3 = {"MODE: BOTH=0,NODEID=1,BROWSEPATH=2,BROWSEPATH_CONCAT=3", iocshArgInt};
+static const iocshArg drvOpcUaSetupArg4 = {"Debug Level for library", iocshArgInt};
 static const iocshArg *const drvOpcUaSetupArg[5] = {&drvOpcUaSetupArg0,&drvOpcUaSetupArg1,&drvOpcUaSetupArg2,&drvOpcUaSetupArg3,&drvOpcUaSetupArg4};
 iocshFuncDef drvOpcUaSetupFuncDef = {"drvOpcUaSetup", 5, drvOpcUaSetupArg};
 void drvOpcUaSetup (const iocshArgBuf *args )
@@ -1080,13 +1082,13 @@ void drvOpcUaSetup (const iocshArgBuf *args )
 
     if(opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,sNodeName,(GetNodeMode)g_mode),verbose)
     {
-        errlogPrintf("Error in opcUa_init()");
+        errlogPrintf("Error in opcUa_init()\n");
         return;
     }
 }
 epicsRegisterFunction(drvOpcUaSetup);
 
-static const iocshArg OpcUaDebugArg0 = {"Debug Level", iocshArgInt};
+static const iocshArg OpcUaDebugArg0 = {"Debug Level for library", iocshArgInt};
 static const iocshArg *const OpcUaDebugArg[1] = {&OpcUaDebugArg0};
 iocshFuncDef OpcUaDebugFuncDef = {"OpcUaDebug", 1, OpcUaDebugArg};
 void OpcUaDebug (const iocshArgBuf *args )
