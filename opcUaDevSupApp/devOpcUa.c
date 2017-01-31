@@ -570,11 +570,10 @@ static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     if(!prec || !prec->dpvt)
         return 1;
-    if(!cmd) {
-        *ppvt = pOPCUA_ItemINFO->ioscanpvt;
-        if(DEBUG_LEVEL >= 2)
-            errlogPrintf("get_ioint_info %s\t ioscanpvt=%p\n",prec->name,*ppvt);
-    }
+    *ppvt = pOPCUA_ItemINFO->ioscanpvt;
+    if(DEBUG_LEVEL >= 2)
+        errlogPrintf("get_ioint_info %s %s I/O event list - ioscanpvt=%p\n",
+                     prec->name, cmd?"removed from":"added to", *ppvt);
     return 0;
 }
 
