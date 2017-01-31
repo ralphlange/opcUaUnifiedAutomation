@@ -937,32 +937,31 @@ long OpcUaSetupMonitors(void)
 
     if(pMyClient->getNodes() )
         return 1;
-    status = pMyClient->readFunc(values,serviceSettings,diagnosticInfos );
+    status = pMyClient->readFunc(values, serviceSettings, diagnosticInfos);
     if (status.isBad()) {
         errlogPrintf("OpcUaSetupMonitors: READ VALUES failed with status %s\n", status.toString().toUtf8());
         return -1;
     }
-    if(pMyClient->debug) errlogPrintf("OpcUaSetupMonitors Read values ok nr = %i\n",values.length());
-    for(OpcUa_UInt32 j=0;j<values.length();j++) {
-        OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[j];
-        if (OpcUa_IsGood(values[j].StatusCode)) {
-            if(values[j].Value.ArrayType && !pOPCUA_ItemINFO->isArray) {
+    if(pMyClient->debug) errlogPrintf("OpcUaSetupMonitors READ of %d values returned ok\n", values.length());
+    for(OpcUa_UInt32 i=0; i<values.length(); i++) {
+        OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[i];
+        if (OpcUa_IsBad(values[i].StatusCode)) {
+            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",pOPCUA_ItemINFO->itemIdx,
+                     pOPCUA_ItemINFO->prec->name, pOPCUA_ItemINFO->ItemPath,
+                     UaStatus(values[i].StatusCode).toString().toUtf8());
+        }
+        else {
+            if(values[i].Value.ArrayType && !pOPCUA_ItemINFO->isArray) {
                  errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",pOPCUA_ItemINFO->prec->name);
             }
             else {
 
-                pOPCUA_ItemINFO->itemDataType = (int) values[j].Value.Datatype;
+                pOPCUA_ItemINFO->itemDataType = (int) values[i].Value.Datatype;
                 epicsMutexLock(pOPCUA_ItemINFO->flagLock);
                 pOPCUA_ItemINFO->isArray = 0;
                 epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
                 if(pMyClient->debug) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
-
             }
-        }
-        else {
-            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",pOPCUA_ItemINFO->itemIdx,
-                         pOPCUA_ItemINFO->prec->name, pOPCUA_ItemINFO->ItemPath,
-                         UaStatus(values[j].StatusCode).toString().toUtf8());
         }
     }
     pMyClient->createMonitoredItems();
