@@ -123,7 +123,7 @@ void DevUaSubscription::dataChange(
                 }
             }      // end array
             else { // is no array
-                if( pOPCUA_ItemINFO->pInpVal ) { // is OUT Record
+                if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
                     if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
                         pOPCUA_ItemINFO->noOut = 1;
