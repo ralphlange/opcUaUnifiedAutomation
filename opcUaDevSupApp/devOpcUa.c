@@ -59,13 +59,13 @@
 #include <devOpcUa.h>
 #include <drvOpcUa.h>
 
-int debug_level(dbCommon *prec) {
-    OPCUA_ItemINFO * p = (OPCUA_ItemINFO *) prec->dpvt;
-    if(p)
-        return p->debug;
+inline int debug_level(dbCommon *prec) {
+    if(prec->dpvt)
+        return ((OPCUA_ItemINFO *) prec->dpvt)->debug;
     else
         return 0;
 }
+
 #define DEBUG_LEVEL debug_level((dbCommon*)prec)
 
 int onceFlag  = 0;
@@ -115,7 +115,7 @@ typedef struct {
    DEVSUPFUN init_record;
    DEVSUPFUN get_ioint_info;
    DEVSUPFUN write_record;
-}OpcUaDSET;
+} OpcUaDSET;
 
 OpcUaDSET devlongoutOpcUa =    {5, NULL, init, init_longout, get_ioint_info, write_longout  };
 epicsExportAddress(dset,devlongoutOpcUa);
@@ -240,7 +240,8 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     pOPCUA_ItemINFO->prec = prec;
     pOPCUA_ItemINFO->debug = prec->tpro;
     pOPCUA_ItemINFO->flagLock = epicsMutexMustCreate();
-    if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("init_common %s\t PACT= %i, recVal=%p\n",prec->name,prec->pact,pOPCUA_ItemINFO->pRecVal);
+    if(pOPCUA_ItemINFO->debug >= 2)
+        errlogPrintf("init_common %s\t PACT= %i, recVal=%p\n", prec->name, prec->pact, pOPCUA_ItemINFO->pRecVal);
     // get OPC item type in init -> after
 
     if(inpType) { // is OUT record
@@ -252,7 +253,7 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     else {
         scanIoInit(&(pOPCUA_ItemINFO->ioscanpvt));
     }
-//  errlogPrintf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
+    //  errlogPrintf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
     return 0;
 }
 
@@ -582,6 +583,7 @@ static long read(dbCommon * prec) {
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
     long ret = 0;
+
     if(DEBUG_LEVEL >= 3)
         errlogPrintf("read %s\t UDF=%i noOut:=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
     if(!pOPCUA_ItemINFO) {
@@ -609,9 +611,9 @@ static long read(dbCommon * prec) {
 }
 
 static long write(dbCommon *prec) {
-    long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
+    long ret = 0;
 
     if(DEBUG_LEVEL >= 3)
         errlogPrintf("write %s\t UDF:%i, noOut=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
