@@ -671,7 +671,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 
 void DevUaClient::itemStat(int verb)
 {
-    errlogPrintf("OpcUa driver: Connected items: %lu\n",vUaItemInfo.size());
+    errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
     if(verb>0) {
         if(verb==1) errlogPrintf("Only bad signals\n");
         errlogPrintf("idx record Name          NS:PATH                                                       epics Type         opcUa Type        CB Out\n");
