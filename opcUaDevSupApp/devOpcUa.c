@@ -210,29 +210,31 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
 {
     OPCUA_ItemINFO* pOPCUA_ItemINFO;
 
-    if(!prec) {
-        recGblRecordError(S_db_notFound, prec,"Fatal error: init_record record has NULL-pointer");
-        getchar();                                                                                  
-        return S_db_notFound;
-    }                                                                                               
-    if(!plnk->type) {
-        recGblRecordError(S_db_badField, prec,"Fatal error: init_record INP field not initialized (It has value 0!!!)");
-        getchar();                                                                                  
-        return S_db_badField;
-    }                                                                                               
-    if(plnk->type != INST_IO) {                                                                 
-        recGblRecordError(S_db_badField, prec,"init_record Illegal INP/OUT field (INST_IO expected");
-        return S_db_badField;                                                                       
+    if(plnk->type != INST_IO) {
+        long status;
+        if (inpType) status = S_dev_badOutType; else status = S_dev_badInpType;
+        recGblRecordError(status, prec, "devOpcUa (init_record) Bad INP/OUT link type (must be INST_IO)");
+        return status;
     }                                                                                               
 
     pOPCUA_ItemINFO =  (OPCUA_ItemINFO *) calloc(1,sizeof(OPCUA_ItemINFO));
+    if (!pOPCUA_ItemINFO) {
+        long status = S_db_noMemory;
+        recGblRecordError(status, prec, "devOpcUa (init_record) Out of memory, calloc() failed");
+        return status;
+    }
+
     if(strlen(plnk->value.instio.string) < ITEMPATHLEN) {
         strcpy(pOPCUA_ItemINFO->ItemPath,plnk->value.instio.string);
         addOPCUA_Item(pOPCUA_ItemINFO);
     }
-    else
-        recGblRecordError(S_db_badField, prec,"init_record Illegal INP field (INST_IO expected");
-    prec->dpvt = (void *) pOPCUA_ItemINFO;
+    else {
+        long status = S_db_badField;
+        recGblRecordError(status, prec, "devOpcUa (init_record) INP/OUT field too long");
+        return status;
+    }
+
+    prec->dpvt = pOPCUA_ItemINFO;
     pOPCUA_ItemINFO->recDataType=recType;
     pOPCUA_ItemINFO->pRecVal = val;
     pOPCUA_ItemINFO->prec = prec;
@@ -241,21 +243,14 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("init_common %s\t PACT= %i, recVal=%p\n",prec->name,prec->pact,pOPCUA_ItemINFO->pRecVal);
     // get OPC item type in init -> after
 
-    if(!inpType) {
-        if(prec->scan <  SCAN_IO_EVENT) {
-                recGblRecordError(S_db_badField, prec, "init_record Illegal SCAN field, IO/Intr + Periodic supported)");
-        	return S_db_badField;
-        }
-        scanIoInit(&(pOPCUA_ItemINFO->ioscanpvt));
-    }
-    else {
-        epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-        pOPCUA_ItemINFO->noOut = 0;
+    if(inpType) { // is OUT record
         pOPCUA_ItemINFO->inpDataType = inpType;
         pOPCUA_ItemINFO->pInpVal = inpVal;
-        epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
         callbackSetCallback(outRecordCallback, &(pOPCUA_ItemINFO->callback));
         callbackSetUser(prec, &(pOPCUA_ItemINFO->callback));
+    }
+    else {
+        scanIoInit(&(pOPCUA_ItemINFO->ioscanpvt));
     }
 //  errlogPrintf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
     return 0;
