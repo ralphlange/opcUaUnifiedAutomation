@@ -61,7 +61,7 @@ void DevUaSubscription::dataChange(
         OPCUA_ItemINFO* pOPCUA_ItemINFO = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
         try {
             epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-            if (! OpcUa_IsGood(dataNotifications[i].Value.StatusCode) )
+            if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
             {
                 if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("  Variable %d failed with status %s\n", dataNotifications[i].ClientHandle,
                        UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8());
