@@ -171,7 +171,7 @@ struct aodset { // analog input dset
 epicsExportAddress(dset,devaoOpcUa);
 
 static long init_waveformRecord();
-static long read_sa();
+static long read_wf();
 struct {
     long number;
     DEVSUPFUN report;
@@ -186,7 +186,7 @@ struct {
     NULL,
     init_waveformRecord,
     get_ioint_info,
-    read_sa,
+    read_wf,
     NULL
 };
 epicsExportAddress(dset,devwaveformOpcUa);
@@ -228,11 +228,7 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     pOPCUA_ItemINFO =  (OPCUA_ItemINFO *) calloc(1,sizeof(OPCUA_ItemINFO));
     if(strlen(plnk->value.instio.string) < ITEMPATHLEN) {
         strcpy(pOPCUA_ItemINFO->ItemPath,plnk->value.instio.string);
-        if( setOPCUA_Item(pOPCUA_ItemINFO) ) {
-            recGblRecordError(S_db_badField, prec,"Can't parse");
-            free(pOPCUA_ItemINFO);
-            pOPCUA_ItemINFO = NULL;
-        }
+        addOPCUA_Item(pOPCUA_ItemINFO);
     }
     else
         recGblRecordError(S_db_badField, prec,"init_record Illegal INP field (INST_IO expected");
@@ -550,7 +546,7 @@ long init_waveformRecord(struct waveformRecord* prec) {
     return  ret;
 }
 
-long read_sa(struct waveformRecord *prec) {
+long read_wf(struct waveformRecord *prec) {
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     //epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     int ret = read((dbCommon*)prec);

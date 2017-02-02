@@ -101,7 +101,7 @@ public:
     long getNodes();
     void setBadQuality();
 
-    long setOPCUA_Item(OPCUA_ItemINFO *h);
+    void addOPCUA_Item(OPCUA_ItemINFO *h);
     UaStatus getAllNodesFromBrowsePath();
     long getNodeFromBrowsePath(OpcUa_UInt32 bpItem);
     long getNodeFromId(OpcUa_UInt32 bpItem);
@@ -252,7 +252,7 @@ void DevUaClient::setBadQuality()
 }
 
 // add OPCUA_ItemINFO to vUaItemInfo Check and seutp nodes is done by getNodes()
-long DevUaClient::setOPCUA_Item(OPCUA_ItemINFO *h)
+void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
 {
     vUaItemInfo.push_back(h);
     h->itemIdx = vUaItemInfo.size()-1;
@@ -988,10 +988,9 @@ long opcUa_close(int verbose)
 }
 
 /* iocShell/Client: Setup an opcUa Item for the driver*/
-long setOPCUA_Item(OPCUA_ItemINFO *h)
+void addOPCUA_Item(OPCUA_ItemINFO *h)
 {
-    long ret =  pMyClient->setOPCUA_Item(h);
-    return ret;
+    pMyClient->addOPCUA_Item(h);
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
