@@ -13,6 +13,11 @@ files. They will be ignored by git:
 
 * Create file *configure/CONFIG_SITE.local* and set *UASDK* variable to your UA-SDK installation.
 
+
+```
+**/configure/*.local
+```
+
 ## Features
 
 
@@ -223,5 +228,12 @@ R0-9-1:
 
 * To prevent git from tracing local definitions use configure/CONFIG_SITE.user and configure/RELEASE.user
 
+## Known bugs
 
+* For big amount of channels, in our test > 800, the epics will break channel access
+connections after some hours. Need to restart IOC.
+
+* In the same test drvOpcuaSetup with mode NODEID will not connect to the opcua objects 
+on the server. No error Message! It works relyably but very slow with mode BOTH. In this 
+mode each object does its own connection.
 
