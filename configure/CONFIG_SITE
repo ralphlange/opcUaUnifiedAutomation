@@ -32,4 +32,7 @@ CROSS_COMPILER_TARGET_ARCHS =
 #   take effect.
 #IOCS_APPL_TOP = </IOC/path/to/application/top>
 
-UASDK = $(TOP)/../../uasdkcppclient-src-debian7.7-x86_64-gcc4.7.2-v1.5.3-346/sdk
+# UASDK = $(TOP)/../../uasdkcppclient-v1.5.3-346/sdk
+# to keep local configuration outside git control define UASDK local
+include $(TOP)/configure/CONFIG_SITE.local
+

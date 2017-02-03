@@ -4,10 +4,14 @@ EPICS opcUa device support with Unified Automation C++ based [client sdk] (https
 
 ## Installation
 
-Depending on your linux installation, install *libcrypto*
+* Depending on your linux installation, install *libcrypto*
 
-Set in *configure/RELEASE* EPICS_BASE variable to your EPICS installation.
-Set in *configure/CONFIG_SITE* UASDK variable to your UA-SDK installation.
+To prevent local settings from being traced by git create your local configuration 
+files. They will be ignored by git:
+
+* Create file *configure/RELEASE.local* and set *EPICS_BASE* variable to your EPICS installation.
+
+* Create file *configure/CONFIG_SITE.local* and set *UASDK* variable to your UA-SDK installation.
 
 ## Features
 
@@ -168,10 +172,10 @@ be improved soon.
   
 ## Ioc Shell fuctions
 
-* drvOpcUaSetup:
+* drvOpcuaSetup:
 
 ```
-    drvOpcUaSetup("opc.tcp://SERVER:PORT","CERTIFICATE_STORE","HOST",MODE,DEBUG)
+    drvOpcuaSetup("opc.tcp://SERVER:PORT","CERTIFICATE_STORE","HOST",MODE,DEBUG)
 
 ```
 
@@ -185,23 +189,39 @@ be improved soon.
     - BROWSEPATH_CONCAT=3: Means concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
   - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
 
-* OpcUaDebug:
+* opcuaDebug:
 
 ```
-    OpcUaDebug(debugLevel)
+    opcuaDebug(debugLevel)
 
 ```
 
 Set verbosity level of the support module. To check single records set the record.TPRO field > 1 to 
 get specific debug information to this record.
 
-* OpcUaStat:
+* opcuaStat:
 
 ```
-    OpcUaStat(verbosity)
+    opcuaStat(verbosity)
 
 ```
 
 Show all connections.
+
+
+## Release notes
+
+R0-8-2: Initial version
+
+R0-9: 
+
+* Simplify the writing of iocShell functions. this needs an update of st.cmd files! 
+
+* setup RELEASE and CONFIG_SITE to relativ paths for BASE and UASDK
+
+R0-9-1: 
+
+* To prevent git from tracing local definitions use configure/CONFIG_SITE.user and configure/RELEASE.user
+
 
 
