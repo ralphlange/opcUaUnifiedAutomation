@@ -180,14 +180,12 @@ DevUaClient::~DevUaClient()
 {
     if (m_pDevUaSubscription)
     {
-        // delete local subscription object
         delete m_pDevUaSubscription;
         m_pDevUaSubscription = NULL;
     }
     if (m_pSession)
     {
-        // disconnect if we're still connected
-        if (m_pSession->isConnected() != OpcUa_False)
+        if (m_pSession->isConnected())
         {
             ServiceSettings serviceSettings;
             m_pSession->disconnect(serviceSettings, OpcUa_True);
@@ -285,8 +283,9 @@ UaStatus DevUaClient::connect(UaString sURL)
 
     if (result.isBad())
     {
-        serverConnectionStatus = UaClient::Disconnected;
-        errlogPrintf("Connect failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaClient::connect failed with status %d (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
 
     return result;
@@ -299,16 +298,19 @@ UaStatus DevUaClient::disconnect()
     // Default settings like timeout
     ServiceSettings serviceSettings;
 
-    if(debug) errlogPrintf("\nDisconnecting");
+    if(debug) errlogPrintf("Disconnecting the session\n");
     result = m_pSession->disconnect(serviceSettings,OpcUa_True);
 
     if (result.isBad())
     {
-        errlogPrintf("Disconnect failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaClient::disconnect failed with status %d (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
 
     return result;
 }
+
 UaStatus DevUaClient::subscribe()
 {
     m_pDevUaSubscription = new DevUaSubscription(this->debug);
@@ -319,6 +321,7 @@ UaStatus DevUaClient::unsubscribe()
 {
     return m_pDevUaSubscription->deleteSubscription();
 }
+
 //get whole bunch of nodes from browsePaths, no direcet node access
 UaStatus DevUaClient::getAllNodesFromBrowsePath()
 {

@@ -27,17 +27,13 @@
 #include "devUaSubscription.h"
 
 DevUaSubscription::DevUaSubscription(int debug=0)
-: m_pSession(NULL),
-  m_pSubscription(NULL)
-{
-    DevUaSubscription::debug = debug;
-}
+    : debug(debug)
+{}
+
 DevUaSubscription::~DevUaSubscription()
 {
     if ( m_pSubscription )
-    {
         deleteSubscription();
-    }
 }
 
 void DevUaSubscription::subscriptionStatusChanged(
@@ -45,8 +41,11 @@ void DevUaSubscription::subscriptionStatusChanged(
     const UaStatus&   status)
 {
     OpcUa_ReferenceParameter(clientSubscriptionHandle); // We use the callback only for this subscription
-    errlogPrintf("Subscription not longer valid - failed with status %d (%s)\n",status.statusCode(), status.toString().toUtf8());
+    errlogPrintf("DevUaSubscription: subscription no longer valid - failed with status %d (%s)\n",
+                 status.statusCode(),
+                 status.toString().toUtf8());
 }
+
 void DevUaSubscription::dataChange(
     OpcUa_UInt32               clientSubscriptionHandle,
     const UaDataNotifications& dataNotifications,
@@ -229,19 +228,21 @@ void DevUaSubscription::newEvents(
     errlogPrintf("DevUaSubscription::newEvents called\n");
 }
 
-UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
+UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
 {
-    if ( m_pSubscription )
+    if (m_pSubscription)
     {
-        errlogPrintf("\nError: Subscription already created\n");
+        errlogPrintf("DevUaSubscription: subscription was already created - can't create\n");
         return OpcUa_BadInvalidState;
     }
+
     m_pSession = pSession;
+
     UaStatus result;
     ServiceSettings serviceSettings;
     SubscriptionSettings subscriptionSettings;
     subscriptionSettings.publishingInterval = 100;
-    if(debug) errlogPrintf("\nCreating subscription\n");
+    if(debug) errlogPrintf("Creating subscription\n");
     result = pSession->createSubscription(
         serviceSettings,
         this,
@@ -252,27 +253,34 @@ UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
     if (result.isBad())
     {
         m_pSubscription = NULL;
-        errlogPrintf("CreateSubscription failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::createSubscription failed with status %d (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
     return result;
 }
+
 UaStatus DevUaSubscription::deleteSubscription()
 {
-    if ( m_pSubscription == NULL )
+    if (!m_pSubscription)
     {
-        errlogPrintf("\nError: No Subscription created\n");
+        errlogPrintf("DevUaSubscription: no subscription present - can't delete\n");
         return OpcUa_BadInvalidState;
     }
     UaStatus result;
     ServiceSettings serviceSettings;
     // let the SDK cleanup the resources for the existing subscription
+    if(debug) errlogPrintf("Deleting subscription\n");
     result = m_pSession->deleteSubscription(
         serviceSettings,
         &m_pSubscription);
     if (result.isBad())
     {
-        errlogPrintf("DevUaSubscription::deleteSubscription failed with status '%s'\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::deleteSubscription failed with status %d (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
+    //TODO: setting the pointer NULL if delete failed might be a memory leak?
     m_pSubscription = NULL;
     return result;
 }
@@ -351,4 +359,3 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     }
     return result;
 }
-
