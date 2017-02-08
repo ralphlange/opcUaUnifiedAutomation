@@ -168,12 +168,11 @@ void signalHandler( int signum )
 }
 
 DevUaClient::DevUaClient()
+    : mode(BROWSEPATH)
+    , serverConnectionStatus(UaClient::Disconnected)
 {
     m_pSession            = new UaSession();
-    m_pDevUaSubscription = NULL;
-    serverConnectionStatus = UaClient::Disconnected;
-    DevUaClient::mode = BROWSEPATH;
-    debug = 0;
+    m_pDevUaSubscription  = new DevUaSubscription(this->debug);
 }
 
 DevUaClient::~DevUaClient()
@@ -213,14 +212,17 @@ void DevUaClient::connectionStatusChanged(
 
     switch (serverStatus)
     {
-    case UaClient::ConnectionWarningWatchdogTimeout:
     case UaClient::ConnectionErrorApiReconnect:
     case UaClient::ServerShutdown:
         this->setBadQuality();
+        this->unsubscribe();
+        break;
+    case UaClient::ConnectionWarningWatchdogTimeout:
+        this->setBadQuality();
         break;
     case UaClient::Connected:
-        if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect) {
-            this->unsubscribe();
+        if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect
+                || serverConnectionStatus == UaClient::NewSessionCreated) {
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
@@ -313,7 +315,6 @@ UaStatus DevUaClient::disconnect()
 
 UaStatus DevUaClient::subscribe()
 {
-    m_pDevUaSubscription = new DevUaSubscription(this->debug);
     return m_pDevUaSubscription->createSubscription(m_pSession);
 }
 
