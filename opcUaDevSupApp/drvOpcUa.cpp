@@ -78,6 +78,19 @@ const char *variantTypeStrings(int type)
     }
 }
 
+inline const char *serverStatusStrings(UaClient::ServerStatus type)
+{
+    switch (type) {
+    case UaClient::Disconnected:                      return "Disconnected";
+    case UaClient::Connected:                         return "Connected";
+    case UaClient::ConnectionWarningWatchdogTimeout:  return "ConnectionWarningWatchdogTimeout";
+    case UaClient::ConnectionErrorApiReconnect:       return "ConnectionErrorApiReconnect";
+    case UaClient::ServerShutdown:                    return "ServerShutdown";
+    case UaClient::NewSessionCreated:                 return "NewSessionCreated";
+    default:                                          return "Unknown Status Value";
+    }
+}
+
 //inline int64_t getMsec(DateTime dateTime){ return (dateTime.Value % 10000000LL)/10000; }
 
 class DevUaClient : public UaSessionCallback
@@ -118,8 +131,7 @@ public:
 private:
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
-    UaClient::ServerStatus connectionStatusStored;
-    int needNewSubscription;
+    UaClient::ServerStatus serverConnectionStatus;
 };
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
@@ -159,8 +171,7 @@ DevUaClient::DevUaClient()
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription = NULL;
-    connectionStatusStored= UaClient::Disconnected;
-    needNewSubscription   = 0;
+    serverConnectionStatus = UaClient::Disconnected;
     DevUaClient::mode = BROWSEPATH;
     debug = 0;
 }
@@ -197,43 +208,31 @@ void DevUaClient::connectionStatusChanged(
 
     OpcUa_ReferenceParameter(clientConnectionId);
 
-    errlogPrintf("%s opcUaClient: Connection status changed to: ",currentBuffer);
+    errlogPrintf("%s opcUaClient: Connection status changed to %d (%s)\n",
+                 currentBuffer,
+                 serverStatus,
+                 serverStatusStrings(serverStatus));
+
     switch (serverStatus)
     {
-    case UaClient::Disconnected:
-        errlogPrintf("Disconnected %d\n",serverStatus);
-        connectionStatusStored = UaClient::Disconnected;
+    case UaClient::ConnectionWarningWatchdogTimeout:
+    case UaClient::ConnectionErrorApiReconnect:
+    case UaClient::ServerShutdown:
+        this->setBadQuality();
         break;
     case UaClient::Connected:
-        errlogPrintf("Connected %d\n",serverStatus);
-        if(connectionStatusStored == UaClient::ConnectionErrorApiReconnect) {
+        if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect) {
             this->unsubscribe();
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
         }
-        connectionStatusStored = UaClient::Connected;
         break;
-    case UaClient::ConnectionWarningWatchdogTimeout:
-        errlogPrintf("ConnectionWarningWatchdogTimeout %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionWarningWatchdogTimeout;
-        this->setBadQuality();
-        break;
-    case UaClient::ConnectionErrorApiReconnect:
-        errlogPrintf("ConnectionErrorApiReconnect %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionErrorApiReconnect;
-        this->setBadQuality();
-        break;
-    case UaClient::ServerShutdown:
-        errlogPrintf("ServerShutdown %d\n",serverStatus);
-        connectionStatusStored = UaClient::ServerShutdown;
-        this->setBadQuality();
-        break;
+    case UaClient::Disconnected:
     case UaClient::NewSessionCreated:
-        errlogPrintf("NewSessionCreated %d\n",serverStatus);
-        connectionStatusStored = UaClient::NewSessionCreated;
         break;
     }
+    serverConnectionStatus = serverStatus;
 }
 
 // Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
@@ -286,7 +285,7 @@ UaStatus DevUaClient::connect(UaString sURL)
 
     if (result.isBad())
     {
-        connectionStatusStored = UaClient::Disconnected;
+        serverConnectionStatus = UaClient::Disconnected;
         errlogPrintf("Connect failed with status %s\n", result.toString().toUtf8());
     }
 
