@@ -27,6 +27,7 @@
 #include "dbScan.h"
 #include "epicsExport.h"
 #include <epicsTypes.h>
+#include <initHooks.h>
 #include "devSup.h"
 #include "recSup.h"
 #include "recGbl.h"
@@ -68,7 +69,6 @@ inline int debug_level(dbCommon *prec) {
 
 #define DEBUG_LEVEL debug_level((dbCommon*)prec)
 
-int onceFlag  = 0;
 static  long         read(dbCommon *prec);
 static  long         write(dbCommon *prec);
 static  void         outRecordCallback(CALLBACK *pcallback);
@@ -194,14 +194,25 @@ epicsExportAddress(dset,devwaveformOpcUa);
 /***************************************************************************
  *		Defines and Locals
  **************************************************************************-*/
+
+static void opcuaMonitorControl (initHookState state)
+{
+    switch (state) {
+    case initHookAfterDatabaseRunning:
+        OpcUaSetupMonitors();
+        break;
+    default:
+        break;
+    }
+}
+
 long init (int after)
 {
+    static int done = 0;
 
-    if( after) {
-            if( !onceFlag ) {
-                onceFlag = 1;
-                return OpcUaSetupMonitors(); // read opc Items to set: records initial value, get pOPCUA_ItemINFO->itemDataType
-            }
+    if (!done) {
+        done = 1;
+        return (initHookRegister(opcuaMonitorControl));
     }
     return 0;
 }
