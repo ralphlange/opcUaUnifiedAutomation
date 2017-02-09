@@ -286,7 +286,7 @@ UaStatus DevUaClient::connect(UaString sURL)
 
     if (result.isBad())
     {
-        errlogPrintf("DevUaClient::connect failed with status %d (%s)\n",
+        errlogPrintf("DevUaClient::connect failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
     }
@@ -306,7 +306,7 @@ UaStatus DevUaClient::disconnect()
 
     if (result.isBad())
     {
-        errlogPrintf("DevUaClient::disconnect failed with status %d (%s)\n",
+        errlogPrintf("DevUaClient::disconnect failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
     }

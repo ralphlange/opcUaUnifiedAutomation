@@ -253,7 +253,7 @@ UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
     if (result.isBad())
     {
         m_pSubscription = NULL;
-        errlogPrintf("DevUaSubscription::createSubscription failed with status %d (%s)\n",
+        errlogPrintf("DevUaSubscription::createSubscription failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
     }
@@ -276,7 +276,7 @@ UaStatus DevUaSubscription::deleteSubscription()
         &m_pSubscription);
     if (result.isBad())
     {
-        errlogPrintf("DevUaSubscription::deleteSubscription failed with status %d (%s)\n",
+        errlogPrintf("DevUaSubscription::deleteSubscription failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
     }
