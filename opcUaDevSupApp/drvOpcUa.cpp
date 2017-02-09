@@ -239,8 +239,12 @@ void DevUaClient::connectionStatusChanged(
 // Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
 void DevUaClient::setBadQuality()
 {
+    epicsTimeStamp	 now;
+    epicsTimeGetCurrent(&now);
+
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
         OPCUA_ItemINFO *pOPCUA_ItemINFO = vUaItemInfo[bpItem];
+        pOPCUA_ItemINFO->prec->time = now;
         pOPCUA_ItemINFO->stat = 1;
         if( pOPCUA_ItemINFO->inpDataType ) { // is OUT Record
             callbackRequest(&(pOPCUA_ItemINFO->callback));
