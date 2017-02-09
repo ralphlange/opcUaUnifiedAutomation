@@ -97,7 +97,7 @@ class DevUaClient : public UaSessionCallback
 {
     UA_DISABLE_COPY(DevUaClient);
 public:
-    DevUaClient();
+    DevUaClient(int debug);
     virtual ~DevUaClient();
 
     // UaSessionCallback implementation ----------------------------------------------------
@@ -167,8 +167,9 @@ void signalHandler( int signum )
     exit(1);
 }
 
-DevUaClient::DevUaClient()
+DevUaClient::DevUaClient(int debug=0)
     : mode(BROWSEPATH)
+    , debug(debug)
     , serverConnectionStatus(UaClient::Disconnected)
 {
     m_pSession            = new UaSession();
@@ -1005,16 +1006,14 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     UaPlatformLayer::init();
 
     // Create instance of DevUaClient
-    pMyClient = new DevUaClient();
+    pMyClient = new DevUaClient(verbose);
 
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
     pMyClient->hostName = nodeName;
     pMyClient->mode = mode;
-    pMyClient->debug = verbose;
+
     // Connect to OPC UA Server
-
-
     status = pMyClient->connect(g_serverUrl);
     if(status.isBad()) {
         errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
