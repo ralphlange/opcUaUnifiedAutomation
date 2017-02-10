@@ -27,6 +27,7 @@
 #include <epicsTypes.h>
 #include <epicsPrint.h>
 #include <epicsTime.h>
+#include <epicsTimer.h>
 #include <epicsExport.h>
 #include <registryFunction.h>
 #include <dbCommon.h>
@@ -93,6 +94,8 @@ inline const char *serverStatusStrings(UaClient::ServerStatus type)
 
 //inline int64_t getMsec(DateTime dateTime){ return (dateTime.Value % 10000000LL)/10000; }
 
+class autoSessionConnect;
+
 class DevUaClient : public UaSessionCallback
 {
     UA_DISABLE_COPY(DevUaClient);
@@ -107,7 +110,8 @@ public:
     UaString applicationCertificate;
     UaString applicationPrivateKey;
     UaString hostName;
-    UaStatus connect(UaString url);
+    UaString url;
+    UaStatus connect();
     UaStatus disconnect();
     UaStatus subscribe();
     UaStatus unsubscribe();
@@ -132,7 +136,36 @@ private:
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
     UaClient::ServerStatus serverConnectionStatus;
+    autoSessionConnect *autoConnector;
+    static epicsTimerQueueActive &queue;
 };
+
+// Timer to retry connecting the session when the server is down at IOC startup
+class autoSessionConnect : public epicsTimerNotify {
+public:
+    autoSessionConnect(DevUaClient *client, const double delay, epicsTimerQueueActive &queue)
+        : timer(queue.createTimer())
+        , client(client)
+        , delay(delay)
+    {}
+    virtual ~autoSessionConnect() { timer.destroy(); }
+    void start() { timer.start(*this, delay); }
+    virtual expireStatus expire(const epicsTime &/*currentTime*/) {
+        UaStatus result = client->connect();
+        if (result.isBad()) {
+            return expireStatus(restart, delay);
+        } else {
+            return expireStatus(noRestart);
+        }
+    }
+private:
+    epicsTimer &timer;
+    DevUaClient *client;
+    const double delay;
+};
+
+epicsTimerQueueActive &DevUaClient::queue = epicsTimerQueueActive::allocate(true);
+
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
@@ -174,6 +207,8 @@ DevUaClient::DevUaClient(int debug=0)
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription  = new DevUaSubscription(this->debug);
+    //TODO: Make reconnect interval configurable
+    autoConnector         = new autoSessionConnect(this, 10.0, queue);
 }
 
 DevUaClient::~DevUaClient()
@@ -193,6 +228,7 @@ DevUaClient::~DevUaClient()
         delete m_pSession;
         m_pSession = NULL;
     }
+    delete autoConnector;
 }
 
 void DevUaClient::connectionStatusChanged(
@@ -223,7 +259,8 @@ void DevUaClient::connectionStatusChanged(
         break;
     case UaClient::Connected:
         if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect
-                || serverConnectionStatus == UaClient::NewSessionCreated) {
+                || serverConnectionStatus == UaClient::NewSessionCreated
+                || serverConnectionStatus == UaClient::Disconnected) {
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
@@ -270,7 +307,7 @@ long DevUaClient::setOPCUA_Item(OPCUA_ItemINFO *h)
     return 0;
 }
 
-UaStatus DevUaClient::connect(UaString sURL)
+UaStatus DevUaClient::connect()
 {
     UaStatus result;
 
@@ -282,18 +319,18 @@ UaStatus DevUaClient::connect(UaString sURL)
     sessionConnectInfo.sProductUri      = "urn:HelmholtzgesellschaftBerlin:TestClient";
     sessionConnectInfo.sSessionName     = sessionConnectInfo.sApplicationUri;
 
-
     // Security settings are not initialized - we connect without security for now
     SessionSecurityInfo sessionSecurityInfo;
 
-    if(debug) errlogPrintf("\nConnecting to %s\n", sURL.toUtf8());
-    result = m_pSession->connect(sURL,sessionConnectInfo,sessionSecurityInfo,this);
+    if(debug) errlogPrintf("\nConnecting to %s\n", url.toUtf8());
+    result = m_pSession->connect(url, sessionConnectInfo, sessionSecurityInfo, this);
 
     if (result.isBad())
     {
         errlogPrintf("DevUaClient::connect failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
+        autoConnector->start();
     }
 
     return result;
@@ -1017,9 +1054,10 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
     pMyClient->hostName = nodeName;
     pMyClient->mode = mode;
+    pMyClient->url = g_serverUrl;
 
     // Connect to OPC UA Server
-    status = pMyClient->connect(g_serverUrl);
+    status = pMyClient->connect();
     if(status.isBad()) {
         errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
         return 1;
