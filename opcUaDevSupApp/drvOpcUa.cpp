@@ -169,6 +169,9 @@ epicsTimerQueueActive &DevUaClient::queue = epicsTimerQueueActive::allocate(true
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
+static double connectInterval = 10.0;
+epicsExportAddress(double, connectInterval);
+
 // global variables
 
 DevUaClient* pMyClient = NULL;
@@ -207,8 +210,7 @@ DevUaClient::DevUaClient(int debug=0)
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription  = new DevUaSubscription(this->debug);
-    //TODO: Make reconnect interval configurable
-    autoConnector         = new autoSessionConnect(this, 10.0, queue);
+    autoConnector         = new autoSessionConnect(this, connectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()

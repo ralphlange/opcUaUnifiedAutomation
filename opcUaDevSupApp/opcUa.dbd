@@ -20,3 +20,5 @@ function(opcuaDebug)
 function(OpcUaSetupMonitors)
 function(OpcUaWriteItems)
 function(opcUa_io_report)
+
+variable(connectInterval, double)
