@@ -136,6 +136,7 @@ private:
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
     UaClient::ServerStatus serverConnectionStatus;
+    bool initialSubscriptionOver;
     autoSessionConnect *autoConnector;
     static epicsTimerQueueActive &queue;
 };
@@ -207,6 +208,7 @@ DevUaClient::DevUaClient(int debug=0)
     : mode(BROWSEPATH)
     , debug(debug)
     , serverConnectionStatus(UaClient::Disconnected)
+    , initialSubscriptionOver(false)
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription  = new DevUaSubscription(this->debug);
@@ -262,7 +264,7 @@ void DevUaClient::connectionStatusChanged(
     case UaClient::Connected:
         if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect
                 || serverConnectionStatus == UaClient::NewSessionCreated
-                || serverConnectionStatus == UaClient::Disconnected) {
+                || (serverConnectionStatus == UaClient::Disconnected && initialSubscriptionOver)) {
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
@@ -324,12 +326,12 @@ UaStatus DevUaClient::connect()
     // Security settings are not initialized - we connect without security for now
     SessionSecurityInfo sessionSecurityInfo;
 
-    if(debug) errlogPrintf("\nConnecting to %s\n", url.toUtf8());
+    if(debug) errlogPrintf("DevUaClient::connect() connecting to '%s'\n", url.toUtf8());
     result = m_pSession->connect(url, sessionConnectInfo, sessionSecurityInfo, this);
 
     if (result.isBad())
     {
-        errlogPrintf("DevUaClient::connect failed with status %#8x (%s)\n",
+        if(debug) errlogPrintf("DevUaClient::connect() connection attempt failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
         autoConnector->start();
@@ -616,12 +618,13 @@ long DevUaClient::getNodes()
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
     vUaNodeId.clear();
     if(false == m_pSession->isConnected() ) {
-         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected\n");
+         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected - deferring initialisation\n");
+         initialSubscriptionOver = true;
          return 1;
     }
     switch(mode) {
     case BOTH:
-        errlogPrintf("DevUaClient::getNodes(BOTH)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BOTH)\n");
         for(OpcUa_UInt32 bpItem=0;bpItem<itemCount;bpItem++) {
             if(debug) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
             if(getNodeFromBrowsePath( bpItem))
@@ -630,18 +633,23 @@ long DevUaClient::getNodes()
         }
         break;
     case NODEID:
-        errlogPrintf("DevUaClient::getNodes(NODEID)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(NODEID)\n");
         ret = getAllNodesFromId();
         break;
     case BROWSEPATH:
     case BROWSEPATH_CONCAT:
-        errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
         status = getAllNodesFromBrowsePath();
         if(status.isBad())
             ret=1;
         break;
-    default: errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n",mode);
+    default:
+        errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n", mode);
     }
+
+    errlogPrintf("OPCUA session initialised (monitoring %lu items on 1 subscription)\n",
+                 (unsigned long) vUaNodeId.size());
+
     if(debug>1) {
         errlogPrintf("DevUaClient::getNodes() Dump nodes and items after init\n");
         for(OpcUa_UInt32 i=0;i<vUaNodeId.size();i++) {
@@ -1061,7 +1069,8 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     // Connect to OPC UA Server
     status = pMyClient->connect();
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
+                     g_serverUrl.toUtf8(), connectInterval);
         return 1;
     }
     // Create subscription
