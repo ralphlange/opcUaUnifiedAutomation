@@ -27,8 +27,13 @@ USR_INCLUDES += -I$(UASDK)/include/uaclient
 USR_INCLUDES += -I$(UASDK)/include/uapki
 USR_INCLUDES += -I$(UASDK)/include/uastack
 USR_INCLUDES += -I$(UASDK)/include/xmlparser
+USR_INCLUDES += -I$(BOOST)
 
-EXTLIB_INSTALLS += $(INSTALL_LIB)/libuastack.so
+ifeq ($(OS), Windows_NT)
+    EXTLIB_INSTALLS += $(INSTALL_LIB)/uastack.lib
+else
+    EXTLIB_INSTALLS += $(INSTALL_LIB)/libuastack.so
+endif
 
 opcUa_DIR = $(UASDK)/lib
 opcUa_LIBS += uaclient
@@ -42,6 +47,10 @@ include $(TOP)/configure/RULES
 
 build: $(EXTLIB_INSTALLS)
 
+$(INSTALL_LIB)/%.lib : $(UASDK)/lib/%.lib
+	$(ECHO) "Installing $@, $<"
+	$(INSTALL) -d -m 444 $< $(@D)
+
 $(INSTALL_LIB)/lib%.a : $(UASDK)/lib/lib%.a
 	$(ECHO) "Installing $@, $<"
 	$(INSTALL) -d -m 444 $< $(@D)
@@ -49,3 +58,5 @@ $(INSTALL_LIB)/lib%.a : $(UASDK)/lib/lib%.a
 $(INSTALL_LIB)/lib%.so : $(UASDK)/lib/lib%.so
 	$(ECHO) "Installing $@, $<"
 	$(INSTALL) -d -m 555 $< $(@D)
+
+

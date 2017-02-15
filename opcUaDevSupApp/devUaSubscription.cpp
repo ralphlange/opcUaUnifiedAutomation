@@ -129,11 +129,11 @@ void DevUaSubscription::dataChange(
                         pOPCUA_ItemINFO->noOut = 1;
                         switch(pOPCUA_ItemINFO->inpDataType){ // Write direct to the records VAL field
                             case epicsInt32T:
-                                val.toInt32( *((epicsInt32*)pOPCUA_ItemINFO->pInpVal) );
+                                val.toInt32( *((OpcUa_Int32*)pOPCUA_ItemINFO->pInpVal) );
                                 if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsUInt32T:
-                                val.toUInt32( *((epicsUInt32*)pOPCUA_ItemINFO->pInpVal));
+                                val.toUInt32( *((OpcUa_UInt32*)pOPCUA_ItemINFO->pInpVal));
                                 if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsFloat64T:
@@ -158,11 +158,11 @@ void DevUaSubscription::dataChange(
                     if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     switch(pOPCUA_ItemINFO->recDataType){ // Write to the OPCUA_ItemINFO variant, record processing will get the value when processing
                         case epicsInt32T:
-                            val.toInt32( (pOPCUA_ItemINFO->varVal).Int32 );
+                            val.toInt32( reinterpret_cast<OpcUa_Int32&>( (pOPCUA_ItemINFO->varVal).Int32 ) );
                             if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
                             break;
                         case epicsUInt32T:
-                            val.toUInt32( (pOPCUA_ItemINFO->varVal).UInt32);
+                            val.toUInt32( reinterpret_cast<OpcUa_UInt32&>( (pOPCUA_ItemINFO->varVal).UInt32) );
                             if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 opcVal: %u\n",(pOPCUA_ItemINFO->varVal).UInt32);
                             break;
                         case epicsFloat64T:

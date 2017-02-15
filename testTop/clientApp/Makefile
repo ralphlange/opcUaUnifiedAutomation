@@ -12,6 +12,8 @@ STATIC_BUILD = NO
 PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
+INC_WIN32 += w_getopt.h
+
 opcUaClient_DIR = $(UASDK)/lib
 opcUaClient_LIBS += opcUa
 opcUaClient_LIBS += $(EPICS_BASE_IOC_LIBS)
@@ -31,6 +33,12 @@ USR_INCLUDES += -I$(UASDK)/include/xmlparser
 # check path with: 'readelf -d ../bin/linux-x86_64/opcUcClient'
 #
 #USR_LDFLAGS += '-Wl,-rpath,/home/kuner/tmp/testUa'
+
+PROD_SYS_LIBS_WIN32 = ws2_32 advapi32 user32 ssleay32 libeay32 crypt32 libxml2 ole32 oleaut32 strmiids
+
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/lib
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/libxml2/out32dll
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/openssl/out32dll 
 
 include $(TOP)/configure/RULES
 #----------------------------------------

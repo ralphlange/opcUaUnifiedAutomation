@@ -708,7 +708,7 @@ void print_OpcUa_DataValue(_OpcUa_DataValue *d)
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo)
 {
     if(val.isArray()) {
-        for(int i=0;i<val.arraySize();i++) {
+        for(OpcUa_UInt32 i=0;i<val.arraySize();i++) {
             if(UaVariant(val[i]).type() < OpcUaType_String)
                 errlogPrintf("%s[%d] %s\n",pMyClient->vUaItemInfo[IdxUaItemInfo]->ItemPath,i,UaVariant(val[i]).toString().toUtf8());
             else
@@ -801,7 +801,9 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
     return 0;
 }
 /* iocShell: record write func  */
+extern "C" {
 epicsRegisterFunction(OpcUaWriteItems);
+}
 long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
 {
     UaStatus            status=0;
@@ -925,7 +927,9 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
 }
 
 /* iocShell: Read and setup pOPCUA_ItemINFO Item data type, createMonitoredItems */
+extern "C" {
 epicsRegisterFunction(OpcUaSetupMonitors);
+}
 long OpcUaSetupMonitors(void)
 {
     UaStatus status;
@@ -1096,7 +1100,9 @@ void drvOpcuaSetup (const iocshArgBuf *args )
         return;
     }
 }
+extern "C" {
 epicsRegisterFunction(drvOpcuaSetup);
+}
 
 static const iocshArg opcuaDebugArg0 = {"Debug Level for library", iocshArgInt};
 static const iocshArg *const opcuaDebugArg[1] = {&opcuaDebugArg0};
@@ -1109,7 +1115,9 @@ void opcuaDebug (const iocshArgBuf *args )
         errlogPrintf("Ignore: OpcUa not initialized\n");
     return;
 }
+extern "C" {
 epicsRegisterFunction(opcuaDebug);
+}
 
 static const iocshArg opcuaStatArg0 = {"Verbosity Level", iocshArgInt};
 static const iocshArg *const opcuaStatArg[1] = {&opcuaStatArg0};
@@ -1119,7 +1127,9 @@ void opcuaStat (const iocshArgBuf *args )
     pMyClient->itemStat(args[0].ival);
     return;
 }
+extern "C" {
 epicsRegisterFunction(opcuaStat);
+}
 
 //create a static object to make shure that opcRegisterToIocShell is called on beginning of
 class OpcRegisterToIocShell

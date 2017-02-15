@@ -22,11 +22,18 @@
 #include <string.h>
 #include <stdio.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <errno.h>
+
+#ifdef _WIN32
+    #include <io.h>
+    #include <process.h>
+#else
+    #include <unistd.h>
+#endif
 
 #include "epicsThread.h"
 #include "iocsh.h"
+	
 
 int main(int argc,char *argv[])
 {

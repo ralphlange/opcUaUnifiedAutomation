@@ -33,6 +33,6 @@ CROSS_COMPILER_TARGET_ARCHS =
 #IOCS_APPL_TOP = </IOC/path/to/application/top>
 
 # UASDK = $(TOP)/../../uasdkcppclient-v1.5.3-346/sdk
-# to keep local configuration outside git control define UASDK local
+# to keep local configuration outside git control define UASDK and BOOST local
 include $(TOP)/configure/CONFIG_SITE.local
 
