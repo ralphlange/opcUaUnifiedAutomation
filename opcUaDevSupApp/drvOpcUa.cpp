@@ -40,6 +40,7 @@
 #include "uabase.h"
 #include "uaclientsdk.h"
 #include "uasession.h"
+
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"
 
@@ -105,7 +106,7 @@ public:
     long getNodes();
     void setBadQuality();
 
-    long setOPCUA_Item(OPCUA_ItemINFO *h);
+    void addOPCUA_Item(OPCUA_ItemINFO *h);
     UaStatus getAllNodesFromBrowsePath();
     long getNodeFromBrowsePath(OpcUa_UInt32 bpItem);
     long getNodeFromId(OpcUa_UInt32 bpItem);
@@ -246,28 +247,22 @@ void DevUaClient::setBadQuality()
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
         OPCUA_ItemINFO *pOPCUA_ItemINFO = vUaItemInfo[bpItem];
         pOPCUA_ItemINFO->stat = 1;
-        if( pOPCUA_ItemINFO->inpDataType ) { // is OUT Record
+        if(pOPCUA_ItemINFO->inpDataType) // is OUT Record
             callbackRequest(&(pOPCUA_ItemINFO->callback));
-        }
-        else {// is IN Record
+        else
             scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );
-        }
     }
 }
 
 // add OPCUA_ItemINFO to vUaItemInfo Check and seutp nodes is done by getNodes()
-long DevUaClient::setOPCUA_Item(OPCUA_ItemINFO *h)
+void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
 {
     vUaItemInfo.push_back(h);
     h->itemIdx = vUaItemInfo.size()-1;
-    if(h->debug >= 3) errlogPrintf("%s\tDevUaClient::setOPCUA_ItemINFO: idx=%lu\n",h->prec->name,vUaItemInfo.size()-1);
-/*    if(! getNodeFromBrowsePath(h->itemIdx ))
-        return 0;
-    if(getNodeFromId(h->itemIdx) )
-        return 1;
-*/
-    return 0;
+    if(h->debug >= 3)
+        errlogPrintf("%s\tDevUaClient::setOPCUA_ItemINFO: idx=%d\n", h->prec->name, h->itemIdx);
 }
+
 
 UaStatus DevUaClient::connect(UaString sURL)
 {
@@ -304,7 +299,7 @@ UaStatus DevUaClient::disconnect()
     // Default settings like timeout
     ServiceSettings serviceSettings;
 
-    if(debug) errlogPrintf("\nDisconnecting");
+    if(debug) errlogPrintf("Disconnecting the session\n");
     result = m_pSession->disconnect(serviceSettings,OpcUa_True);
 
     if (result.isBad())
@@ -314,6 +309,7 @@ UaStatus DevUaClient::disconnect()
 
     return result;
 }
+
 UaStatus DevUaClient::subscribe()
 {
     m_pDevUaSubscription = new DevUaSubscription(this->debug);
@@ -324,6 +320,7 @@ UaStatus DevUaClient::unsubscribe()
 {
     return m_pDevUaSubscription->deleteSubscription();
 }
+
 //get whole bunch of nodes from browsePaths, no direcet node access
 UaStatus DevUaClient::getAllNodesFromBrowsePath()
 {
@@ -642,7 +639,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 
 void DevUaClient::itemStat(int verb)
 {
-    errlogPrintf("OpcUa driver: Connected items: %lu\n",vUaItemInfo.size());
+    errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
     if(verb>0) {
         if(verb==1) errlogPrintf("Only bad signals\n");
         errlogPrintf("idx record Name          NS:PATH                                                       epics Type         opcUa Type        CB Out\n");
@@ -958,10 +955,9 @@ long opcUa_close(int verbose)
 }
 
 /* iocShell/Client: Setup an opcUa Item for the driver*/
-long setOPCUA_Item(OPCUA_ItemINFO *h)
+void addOPCUA_Item(OPCUA_ItemINFO *h)
 {
-    long ret =  pMyClient->setOPCUA_Item(h);
-    return ret;
+    pMyClient->addOPCUA_Item(h);
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
@@ -984,17 +980,18 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 
     status = pMyClient->connect(g_serverUrl);
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'\n", g_serverUrl.toUtf8());
         return 1;
     }
     // Create subscription
     status = pMyClient->subscribe();
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to subscribe on server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to subscribe to server '%s'\n", g_serverUrl.toUtf8());
         return 1;
     }
     return 0;
 }
+
 /* iocShell: shell functions */
 
 static const iocshArg drvOpcuaSetupArg0 = {"[URL] to server", iocshArgString};
