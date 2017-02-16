@@ -34,7 +34,7 @@
 
 #ifdef _WIN32
     #include <windows.h>
-    #include "w_getopt.h"
+    #include "getopt.h"
 #endif
 
 
