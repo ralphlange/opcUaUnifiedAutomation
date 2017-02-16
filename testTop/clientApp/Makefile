@@ -12,8 +12,6 @@ STATIC_BUILD = NO
 PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
-INC_WIN32 += w_getopt.h
-
 opcUaClient_DIR = $(UASDK)/lib
 opcUaClient_LIBS += opcUa
 opcUaClient_LIBS += $(EPICS_BASE_IOC_LIBS)
@@ -28,6 +26,7 @@ USR_INCLUDES += -I$(UASDK)/include/uaclient
 USR_INCLUDES += -I$(UASDK)/include/uapki
 USR_INCLUDES += -I$(UASDK)/include/uastack
 USR_INCLUDES += -I$(UASDK)/include/xmlparser
+USR_INCLUDES_WIN32 += -I$(GETOPT)/
 
 # set rpath than the libraries can be found at your install location
 # check path with: 'readelf -d ../bin/linux-x86_64/opcUcClient'

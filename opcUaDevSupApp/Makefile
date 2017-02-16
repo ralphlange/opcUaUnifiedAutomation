@@ -19,21 +19,16 @@ INC += devOpcUa.h drvOpcUa.h
 USR_SYS_LIBS += crypto
 USR_SYS_LIBS += xml2
 
-uastack_DIR=$(UASDK)/lib
-USR_LIBS += uastack
-
 USR_INCLUDES += -I$(UASDK)/include/uabase
 USR_INCLUDES += -I$(UASDK)/include/uaclient
 USR_INCLUDES += -I$(UASDK)/include/uapki
 USR_INCLUDES += -I$(UASDK)/include/uastack
 USR_INCLUDES += -I$(UASDK)/include/xmlparser
-USR_INCLUDES += -I$(BOOST)
 
-ifeq ($(OS), Windows_NT)
-    EXTLIB_INSTALLS += $(INSTALL_LIB)/uastack.lib
-else
-    EXTLIB_INSTALLS += $(INSTALL_LIB)/libuastack.so
-endif
+USR_INCLUDES_WIN32 += -I$(BOOST)
+
+LIB_INSTALLS_WIN32 += $(UASDK)/lib/uastack.lib
+LIB_INSTALLS_Linux += $(UASDK)/lib/libuastack.so
 
 opcUa_DIR = $(UASDK)/lib
 opcUa_LIBS += uaclient
@@ -45,7 +40,7 @@ include $(TOP)/configure/RULES
 #----------------------------------------
 #  ADD RULES AFTER THIS LINE
 
-build: $(EXTLIB_INSTALLS)
+build:
 
 $(INSTALL_LIB)/%.lib : $(UASDK)/lib/%.lib
 	$(ECHO) "Installing $@, $<"
