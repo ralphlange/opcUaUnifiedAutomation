@@ -41,7 +41,7 @@ public:
         OpcUa_UInt32                clientSubscriptionHandle,
         UaEventFieldLists&          eventFieldList);
 
-    UaStatus createSubscription(UaSession* pSession);
+    UaStatus createSubscription(UaSession *pSession);
     UaStatus deleteSubscription();
     UaStatus createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo);
 
