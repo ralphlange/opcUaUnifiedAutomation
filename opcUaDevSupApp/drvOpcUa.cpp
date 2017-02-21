@@ -27,6 +27,7 @@
 #include <epicsTypes.h>
 #include <epicsPrint.h>
 #include <epicsTime.h>
+#include <epicsTimer.h>
 #include <epicsExport.h>
 #include <registryFunction.h>
 #include <dbCommon.h>
@@ -83,13 +84,28 @@ const char *variantTypeStrings(int type)
     }
 }
 
+inline const char *serverStatusStrings(UaClient::ServerStatus type)
+{
+    switch (type) {
+    case UaClient::Disconnected:                      return "Disconnected";
+    case UaClient::Connected:                         return "Connected";
+    case UaClient::ConnectionWarningWatchdogTimeout:  return "ConnectionWarningWatchdogTimeout";
+    case UaClient::ConnectionErrorApiReconnect:       return "ConnectionErrorApiReconnect";
+    case UaClient::ServerShutdown:                    return "ServerShutdown";
+    case UaClient::NewSessionCreated:                 return "NewSessionCreated";
+    default:                                          return "Unknown Status Value";
+    }
+}
+
 //inline int64_t getMsec(DateTime dateTime){ return (dateTime.Value % 10000000LL)/10000; }
+
+class autoSessionConnect;
 
 class DevUaClient : public UaSessionCallback
 {
     UA_DISABLE_COPY(DevUaClient);
 public:
-    DevUaClient();
+    DevUaClient(int debug);
     virtual ~DevUaClient();
 
     // UaSessionCallback implementation ----------------------------------------------------
@@ -99,7 +115,8 @@ public:
     UaString applicationCertificate;
     UaString applicationPrivateKey;
     UaString hostName;
-    UaStatus connect(UaString url);
+    UaString url;
+    UaStatus connect();
     UaStatus disconnect();
     UaStatus subscribe();
     UaStatus unsubscribe();
@@ -123,11 +140,43 @@ public:
 private:
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
-    UaClient::ServerStatus connectionStatusStored;
-    int needNewSubscription;
+    UaClient::ServerStatus serverConnectionStatus;
+    bool initialSubscriptionOver;
+    autoSessionConnect *autoConnector;
+    static epicsTimerQueueActive &queue;
 };
+
+// Timer to retry connecting the session when the server is down at IOC startup
+class autoSessionConnect : public epicsTimerNotify {
+public:
+    autoSessionConnect(DevUaClient *client, const double delay, epicsTimerQueueActive &queue)
+        : timer(queue.createTimer())
+        , client(client)
+        , delay(delay)
+    {}
+    virtual ~autoSessionConnect() { timer.destroy(); }
+    void start() { timer.start(*this, delay); }
+    virtual expireStatus expire(const epicsTime &/*currentTime*/) {
+        UaStatus result = client->connect();
+        if (result.isBad()) {
+            return expireStatus(restart, delay);
+        } else {
+            return expireStatus(noRestart);
+        }
+    }
+private:
+    epicsTimer &timer;
+    DevUaClient *client;
+    const double delay;
+};
+
+epicsTimerQueueActive &DevUaClient::queue = epicsTimerQueueActive::allocate(true);
+
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
+
+static double connectInterval = 10.0;
+epicsExportAddress(double, connectInterval);
 
 // global variables
 
@@ -160,28 +209,27 @@ void signalHandler( int signum )
     exit(1);
 }
 
-DevUaClient::DevUaClient()
+DevUaClient::DevUaClient(int debug=0)
+    : mode(BROWSEPATH)
+    , debug(debug)
+    , serverConnectionStatus(UaClient::Disconnected)
+    , initialSubscriptionOver(false)
 {
     m_pSession            = new UaSession();
-    m_pDevUaSubscription = NULL;
-    connectionStatusStored= UaClient::Disconnected;
-    needNewSubscription   = 0;
-    DevUaClient::mode = BROWSEPATH;
-    debug = 0;
+    m_pDevUaSubscription  = new DevUaSubscription(this->debug);
+    autoConnector         = new autoSessionConnect(this, connectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()
 {
     if (m_pDevUaSubscription)
     {
-        // delete local subscription object
         delete m_pDevUaSubscription;
         m_pDevUaSubscription = NULL;
     }
     if (m_pSession)
     {
-        // disconnect if we're still connected
-        if (m_pSession->isConnected() != OpcUa_False)
+        if (m_pSession->isConnected())
         {
             ServiceSettings serviceSettings;
             m_pSession->disconnect(serviceSettings, OpcUa_True);
@@ -189,6 +237,7 @@ DevUaClient::~DevUaClient()
         delete m_pSession;
         m_pSession = NULL;
     }
+    delete autoConnector;
 }
 
 void DevUaClient::connectionStatusChanged(
@@ -202,50 +251,47 @@ void DevUaClient::connectionStatusChanged(
 
     OpcUa_ReferenceParameter(clientConnectionId);
 
-    errlogPrintf("%s opcUaClient: Connection status changed to: ",currentBuffer);
+    errlogPrintf("%s opcUaClient: Connection status changed to %d (%s)\n",
+                 currentBuffer,
+                 serverStatus,
+                 serverStatusStrings(serverStatus));
+
     switch (serverStatus)
     {
-    case UaClient::Disconnected:
-        errlogPrintf("Disconnected %d\n",serverStatus);
-        connectionStatusStored = UaClient::Disconnected;
+    case UaClient::ConnectionErrorApiReconnect:
+    case UaClient::ServerShutdown:
+        this->setBadQuality();
+        this->unsubscribe();
+        break;
+    case UaClient::ConnectionWarningWatchdogTimeout:
+        this->setBadQuality();
         break;
     case UaClient::Connected:
-        errlogPrintf("Connected %d\n",serverStatus);
-        if(connectionStatusStored == UaClient::ConnectionErrorApiReconnect) {
-            this->unsubscribe();
+        if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect
+                || serverConnectionStatus == UaClient::NewSessionCreated
+                || (serverConnectionStatus == UaClient::Disconnected && initialSubscriptionOver)) {
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
         }
-        connectionStatusStored = UaClient::Connected;
         break;
-    case UaClient::ConnectionWarningWatchdogTimeout:
-        errlogPrintf("ConnectionWarningWatchdogTimeout %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionWarningWatchdogTimeout;
-        this->setBadQuality();
-        break;
-    case UaClient::ConnectionErrorApiReconnect:
-        errlogPrintf("ConnectionErrorApiReconnect %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionErrorApiReconnect;
-        this->setBadQuality();
-        break;
-    case UaClient::ServerShutdown:
-        errlogPrintf("ServerShutdown %d\n",serverStatus);
-        connectionStatusStored = UaClient::ServerShutdown;
-        this->setBadQuality();
-        break;
+    case UaClient::Disconnected:
     case UaClient::NewSessionCreated:
-        errlogPrintf("NewSessionCreated %d\n",serverStatus);
-        connectionStatusStored = UaClient::NewSessionCreated;
         break;
     }
+    serverConnectionStatus = serverStatus;
 }
 
 // Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
 void DevUaClient::setBadQuality()
 {
+    epicsTimeStamp	 now;
+    epicsTimeGetCurrent(&now);
+
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
         OPCUA_ItemINFO *pOPCUA_ItemINFO = vUaItemInfo[bpItem];
+        pOPCUA_ItemINFO->prec->time = now;
+        pOPCUA_ItemINFO->noOut = 1;
         pOPCUA_ItemINFO->stat = 1;
         if(pOPCUA_ItemINFO->inpDataType) // is OUT Record
             callbackRequest(&(pOPCUA_ItemINFO->callback));
@@ -263,8 +309,7 @@ void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
         errlogPrintf("%s\tDevUaClient::setOPCUA_ItemINFO: idx=%d\n", h->prec->name, h->itemIdx);
 }
 
-
-UaStatus DevUaClient::connect(UaString sURL)
+UaStatus DevUaClient::connect()
 {
     UaStatus result;
 
@@ -276,17 +321,18 @@ UaStatus DevUaClient::connect(UaString sURL)
     sessionConnectInfo.sProductUri      = "urn:HelmholtzgesellschaftBerlin:TestClient";
     sessionConnectInfo.sSessionName     = sessionConnectInfo.sApplicationUri;
 
-
     // Security settings are not initialized - we connect without security for now
     SessionSecurityInfo sessionSecurityInfo;
 
-    if(debug) errlogPrintf("\nConnecting to %s\n", sURL.toUtf8());
-    result = m_pSession->connect(sURL,sessionConnectInfo,sessionSecurityInfo,this);
+    if(debug) errlogPrintf("DevUaClient::connect() connecting to '%s'\n", url.toUtf8());
+    result = m_pSession->connect(url, sessionConnectInfo, sessionSecurityInfo, this);
 
     if (result.isBad())
     {
-        connectionStatusStored = UaClient::Disconnected;
-        errlogPrintf("Connect failed with status %s\n", result.toString().toUtf8());
+        if(debug) errlogPrintf("DevUaClient::connect() connection attempt failed with status %#8x (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
+        autoConnector->start();
     }
 
     return result;
@@ -304,7 +350,9 @@ UaStatus DevUaClient::disconnect()
 
     if (result.isBad())
     {
-        errlogPrintf("Disconnect failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaClient::disconnect failed with status %#8x (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
 
     return result;
@@ -312,7 +360,6 @@ UaStatus DevUaClient::disconnect()
 
 UaStatus DevUaClient::subscribe()
 {
-    m_pDevUaSubscription = new DevUaSubscription(this->debug);
     return m_pDevUaSubscription->createSubscription(m_pSession);
 }
 
@@ -536,12 +583,13 @@ long DevUaClient::getNodes()
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
     vUaNodeId.clear();
     if(false == m_pSession->isConnected() ) {
-         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected\n");
+         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected - deferring initialisation\n");
+         initialSubscriptionOver = true;
          return 1;
     }
     switch(mode) {
     case BOTH:
-        errlogPrintf("DevUaClient::getNodes(BOTH)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BOTH)\n");
         for(OpcUa_UInt32 bpItem=0;bpItem<itemCount;bpItem++) {
             if(debug) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
             if(getNodeFromBrowsePath( bpItem))
@@ -550,18 +598,23 @@ long DevUaClient::getNodes()
         }
         break;
     case NODEID:
-        errlogPrintf("DevUaClient::getNodes(NODEID)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(NODEID)\n");
         ret = getAllNodesFromId();
         break;
     case BROWSEPATH:
     case BROWSEPATH_CONCAT:
-        errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
         status = getAllNodesFromBrowsePath();
         if(status.isBad())
             ret=1;
         break;
-    default: errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n",mode);
+    default:
+        errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n", mode);
     }
+
+    errlogPrintf("OPCUA session initialised (monitoring %lu items on 1 subscription)\n",
+                 (unsigned long) vUaNodeId.size());
+
     if(debug>1) {
         errlogPrintf("DevUaClient::getNodes() Dump nodes and items after init\n");
         for(OpcUa_UInt32 i=0;i<vUaNodeId.size();i++) {
@@ -968,19 +1021,19 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     UaPlatformLayer::init();
 
     // Create instance of DevUaClient
-    pMyClient = new DevUaClient();
+    pMyClient = new DevUaClient(verbose);
 
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
     pMyClient->hostName = nodeName;
     pMyClient->mode = mode;
-    pMyClient->debug = verbose;
+    pMyClient->url = g_serverUrl;
+
     // Connect to OPC UA Server
-
-
-    status = pMyClient->connect(g_serverUrl);
+    status = pMyClient->connect();
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'\n", g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
+                     g_serverUrl.toUtf8(), connectInterval);
         return 1;
     }
     // Create subscription
