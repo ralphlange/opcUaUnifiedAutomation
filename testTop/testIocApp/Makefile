@@ -9,7 +9,7 @@ CROSS_COMPILER_TARGET_ARCHS=
 
 STATIC_BUILD = NO
 
-DB = OPCUA_RECORD.db freeopcuaTEST.db
+DB = testServer.db freeopcuaTEST.db
 
 IOCS+= OPCUAIOC
 
