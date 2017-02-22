@@ -32,8 +32,7 @@ DevUaSubscription::DevUaSubscription(int debug=0)
 
 DevUaSubscription::~DevUaSubscription()
 {
-    if ( m_pSubscription )
-        deleteSubscription();
+    deleteSubscription();
 }
 
 void DevUaSubscription::subscriptionStatusChanged(
@@ -230,12 +229,6 @@ void DevUaSubscription::newEvents(
 
 UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
 {
-    if (m_pSubscription)
-    {
-        errlogPrintf("DevUaSubscription: subscription was already created - can't create\n");
-        return OpcUa_BadInvalidState;
-    }
-
     m_pSession = pSession;
 
     UaStatus result;
@@ -252,7 +245,6 @@ UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
         &m_pSubscription);
     if (result.isBad())
     {
-        m_pSubscription = NULL;
         errlogPrintf("DevUaSubscription::createSubscription failed with status %#8x (%s)\n",
                      result.statusCode(),
                      result.toString().toUtf8());
@@ -262,11 +254,6 @@ UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
 
 UaStatus DevUaSubscription::deleteSubscription()
 {
-    if (!m_pSubscription)
-    {
-        errlogPrintf("DevUaSubscription: no subscription present - can't delete\n");
-        return OpcUa_BadInvalidState;
-    }
     UaStatus result;
     ServiceSettings serviceSettings;
     // let the SDK cleanup the resources for the existing subscription
@@ -281,18 +268,12 @@ UaStatus DevUaSubscription::deleteSubscription()
                      result.toString().toUtf8());
     }
     //TODO: setting the pointer NULL if delete failed might be a memory leak?
-    m_pSubscription = NULL;
     return result;
 }
 
 UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *uaItemInfo)
 {
     if(debug) errlogPrintf("DevUaSubscription::createMonitoredItems DevUaSubscription::createMonitoredItems\n");
-    if ( m_pSubscription == NULL )
-    {
-        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: missing subscription\n");
-        return OpcUa_BadInvalidState;
-    }
     if( uaItemInfo->size() == vUaNodeId.size())
         m_vectorUaItemInfo = uaItemInfo;
     else

@@ -222,11 +222,7 @@ DevUaClient::DevUaClient(int debug=0)
 
 DevUaClient::~DevUaClient()
 {
-    if (m_pDevUaSubscription)
-    {
-        delete m_pDevUaSubscription;
-        m_pDevUaSubscription = NULL;
-    }
+    delete m_pDevUaSubscription;
     if (m_pSession)
     {
         if (m_pSession->isConnected())
