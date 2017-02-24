@@ -138,6 +138,7 @@ OPCUA_ItemINFO * newOpcItem(char *path,int verb)
     if(strlen(path) < ITEMPATHLEN) {
         strcpy(pOPCUA_ItemINFO->ItemPath,path);
         addOPCUA_Item(pOPCUA_ItemINFO);
+        return pOPCUA_ItemINFO;
     }
     free(pOPCUA_ItemINFO);
     printf("Skip Argument '%s'\n",path);
