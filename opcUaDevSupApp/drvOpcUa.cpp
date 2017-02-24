@@ -379,7 +379,7 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
     std::string             partPath;
 
     if(debug)   errlogPrintf("DevUaClient::getAllNodesFromBrowsePath()");
-    if(debug>1) errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++)        errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
+    if(debug>1) {errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);}
     browsePaths.create(itemCount);
     for(bpItem=0;bpItem<itemCount;bpItem++) {
         std::vector<std::string> devpath; // parsed item path
@@ -644,9 +644,10 @@ void DevUaClient::writeComplete( OpcUa_UInt32 transactionId,const UaStatus& resu
 {
     if(result.isBad())
         errlogPrintf("Bad Write Result: ");
-        for(unsigned int i=0;i<results.length();i++)
-            errlogPrintf("%s ",result.isBad()? result.toString().toUtf8():"ok");
+    for(unsigned int i=0;i<results.length();i++) {
+        errlogPrintf("%s ",result.isBad()? result.toString().toUtf8():"ok");
         errlogPrintf("\n");
+    }
 }
 
 UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos)
