@@ -38,6 +38,13 @@ CHECK_RELEASE = YES
 # Path to the Unified Automation OPC UA C++ SDK
 #UASDK = $(TOP)/../../uasdkcppclient-v1.5.3-346/sdk
 
+# How the Unified Automation SDK shared libraries are deployed
+#   SYSTEM = shared libs are in a system location
+#   PROVIDED = shared libs are in $(UASDK_DIR)
+#   INSTALL = shared libs are installed (copied) into this module
+UASDK_DEPLOY_MODE = SYSTEM
+UASDK_DIR = $(UASDK)/lib
+
 # These allow developers to override the CONFIG_SITE variable
 # settings without having to modify the configure/CONFIG_SITE
 # file itself.
