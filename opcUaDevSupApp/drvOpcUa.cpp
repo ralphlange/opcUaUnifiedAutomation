@@ -143,7 +143,7 @@ private:
     UaClient::ServerStatus serverConnectionStatus;
     bool initialSubscriptionOver;
     autoSessionConnect *autoConnector;
-    static epicsTimerQueueActive &queue;
+    epicsTimerQueueActive &queue;
 };
 
 // Timer to retry connecting the session when the server is down at IOC startup
@@ -169,8 +169,6 @@ private:
     DevUaClient *client;
     const double delay;
 };
-
-epicsTimerQueueActive &DevUaClient::queue = epicsTimerQueueActive::allocate(true);
 
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
@@ -214,6 +212,7 @@ DevUaClient::DevUaClient(int debug=0)
     , debug(debug)
     , serverConnectionStatus(UaClient::Disconnected)
     , initialSubscriptionOver(false)
+    , queue (epicsTimerQueueActive::allocate(true))
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription  = new DevUaSubscription(this->debug);
@@ -233,6 +232,7 @@ DevUaClient::~DevUaClient()
         delete m_pSession;
         m_pSession = NULL;
     }
+    queue.release();
     delete autoConnector;
 }
 
