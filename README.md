@@ -9,8 +9,6 @@ EPICS opcUa device support with Unified Automation C++ based
 * This module has a standard EPICS module structure. It compiles against
   recent versions of EPICS Base 3.14, 3.15 and 3.16.
 
-* Depending on your Linux installation, install *libcrypto*.
-
 * When cloning this module, you may create local settings that are not being
   traced by git.
 
@@ -19,6 +17,9 @@ EPICS opcUa device support with Unified Automation C++ based
 
   * Create *configure/CONFIG_SITE.local* and set *UASDK* to point to your
     Unified Automation OPC UA C++ Client SDK installation.
+
+* Building binaries (IOCs) may need libcrypto installed, depending on the
+  setup used when compiling the SDK libraries.
 
 
 ## Features

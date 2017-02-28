@@ -9,9 +9,6 @@ LIBRARY_HOST += opcUa
 opcUa_SRCS = devOpcUa.c drvOpcUa.cpp devUaSubscription.cpp
 INC += devOpcUa.h drvOpcUa.h
 
-USR_SYS_LIBS += crypto
-USR_SYS_LIBS += xml2
-
 UASDK_LIBS = uabase uaclient uapki uastack xmlparser
 
 USR_INCLUDES += $(foreach module, $(UASDK_LIBS), -I$(UASDK)/include/$(module))
