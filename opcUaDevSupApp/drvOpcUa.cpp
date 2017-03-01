@@ -202,11 +202,6 @@ extern "C" {
     }
 }
 
-void signalHandler( int signum )
-{
-    exit(1);
-}
-
 DevUaClient::DevUaClient(int debug=0)
     : mode(BROWSEPATH)
     , debug(debug)
@@ -1095,8 +1090,6 @@ void drvOpcuaSetup (const iocshArgBuf *args )
         g_mode = 0;
     }
     int verbose = args[4].ival;
-
-    signal(SIGINT, signalHandler);
 
     g_applicationCertificate = g_certificateStorePath + "/certs/cert_client_" + g_defaultHostname + ".der";
     g_applicationPrivateKey	 = g_certificateStorePath + "/private/private_key_client_" + g_defaultHostname + ".pem";
