@@ -144,6 +144,11 @@ OPCUA_ItemINFO * newOpcItem(char *path,int verb)
     printf("Skip Argument '%s'\n",path);
     return NULL;
 }
+void signalHandler( int signum )
+{
+    exit(1);
+}
+
 
 int main(int argc, char* argv[], char *envp[])
 {
@@ -216,7 +221,6 @@ int main(int argc, char* argv[], char *envp[])
             sleep(1);
         }
     }
-
     result = opcUa_close(verbose);
     return 0;
 }
