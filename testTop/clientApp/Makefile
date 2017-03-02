@@ -10,7 +10,13 @@ PROD_LIBS += opcUa
 PROD_LIBS += $(UASDK_LIBS)
 PROD_LIBS += $(EPICS_BASE_IOC_LIBS)
 
-PROD_SYS_LIBS += xml2 crypto
+ifeq ($(UASDK_USE_XMLPARSER),YES)
+PROD_SYS_LIBS += xml2
+endif
+
+ifeq ($(UASDK_USE_CRYPTO),YES)
+PROD_SYS_LIBS += crypto
+endif
 
 ifeq ($(UASDK_DEPLOY_MODE),PROVIDED)
 define UA_template

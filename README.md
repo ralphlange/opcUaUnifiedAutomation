@@ -8,10 +8,21 @@ EPICS opcUa device support with Unified Automation C++ based
 * Unified Automation C++ Based OPC UA Client SDK.
   This device support has been developed using the 1.5.x series.
 
-* Building binaries (IOCs) needs libcrypto and libxml2 on your system.
-  Package names depend on the Linux distribution:
-  openssl-devel and libxml2-devel on RedHat/CentOS/Fedora,
-  libssl-dev and libxml2-dev on Debian/Ubuntu.
+* If you want to use crypto support (authentication/encryption), you need
+  libcrypto on your system - both when compiling the SDK and when generating
+  any binaries (IOCs).
+  The name of the package you have to install depends on the Linux distro:
+  openssl-devel on RedHat/CentOS/Fedora, libssl-dev on Debian/Ubuntu.
+  Use the CONFIG_SITE.local file (see below) where the binary is created
+  to set this option.
+
+* If you want support for XML definitions (e.g. for using the SDK examples
+  and tools), you need libxml2 an your system - both when compiling the SDK
+  and when generating any binaries (IOCs).
+  The name of the package you have to install depends on the Linux distro:
+  libxml2-devel on RedHat/CentOS/Fedora, libxml2-dev on Debian/Ubuntu.
+  Use the CONFIG_SITE.local file (see below) where the binary is created
+  to set this option.
 
 ## Build and Installation
 
@@ -26,8 +37,8 @@ EPICS opcUa device support with Unified Automation C++ based
 
   * Create *configure/CONFIG_SITE.local* and set *UASDK* to point to your
     Unified Automation C++ OPC UA Client SDK installation.
-    This is also where you select how the SDK libraries are installed on your
-    target systems.
+    This is also where you select how the SDK libraries will be installed
+    on your target systems, and the optional support choices (see above).
 
 ## Features
 
