@@ -45,7 +45,7 @@ CHECK_RELEASE = YES
 UASDK_DEPLOY_MODE = SYSTEM
 UASDK_DIR = $(UASDK)/lib
 
-UASDK_LIBS = uabase uaclient uapki uastack xmlparser
+UASDK_LIBS = uaclient uapki uabase uastack xmlparser
 USR_INCLUDES += $(foreach lib, $(UASDK_LIBS), -I$(UASDK)/include/$(lib))
 
 # These allow developers to override the CONFIG_SITE variable
