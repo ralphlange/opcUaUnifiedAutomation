@@ -6,9 +6,11 @@ include $(TOP)/configure/CONFIG
 PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
-opcUaClient_LIBS += opcUa
-opcUaClient_LIBS += $(UASDK_LIBS)
-opcUaClient_LIBS += $(EPICS_BASE_IOC_LIBS)
+PROD_LIBS += opcUa
+PROD_LIBS += $(UASDK_LIBS)
+PROD_LIBS += $(EPICS_BASE_IOC_LIBS)
+
+PROD_SYS_LIBS += xml2 crypto
 
 ifeq ($(UASDK_DEPLOY_MODE),PROVIDED)
 define UA_template
