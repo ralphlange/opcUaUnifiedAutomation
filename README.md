@@ -3,24 +3,31 @@
 EPICS opcUa device support with Unified Automation C++ based
 [client sdk](https://www.unified-automation.com/products/client-sdk.html).
 
+## Prerequisites
+
+* Unified Automation C++ Based OPC UA Client SDK.
+  This device support has been developed using the 1.5.x series.
+
+* Building binaries (IOCs) needs libcrypto and libxml2 on your system.
+  Package names depend on the Linux distribution:
+  openssl-devel and libxml2-devel on RedHat/CentOS/Fedora,
+  libssl-dev and libxml2-dev on Debian/Ubuntu.
 
 ## Build and Installation
 
 * This module has a standard EPICS module structure. It compiles against
   recent versions of EPICS Base 3.14, 3.15 and 3.16.
 
-* When cloning this module, you may create local settings that are not being
-  traced by git.
+* When cloning this module from the repository, you may create local settings
+  that are not being traced by git and don't create conflicts:
 
   * Create *configure/RELEASE.local* and set *EPICS_BASE* to point to your
     EPICS installation.
 
   * Create *configure/CONFIG_SITE.local* and set *UASDK* to point to your
-    Unified Automation OPC UA C++ Client SDK installation.
-
-* Building binaries (IOCs) may need libcrypto installed, depending on the
-  setup used when compiling the SDK libraries.
-
+    Unified Automation C++ OPC UA Client SDK installation.
+    This is also where you select how the SDK libraries are installed on your
+    target systems.
 
 ## Features
 
