@@ -57,8 +57,8 @@ void DevUaSubscription::dataChange(
     {
         struct dataChangeError {};
         OPCUA_ItemINFO* pOPCUA_ItemINFO = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
+        epicsMutexLock(pOPCUA_ItemINFO->flagLock);
         try {
-            epicsMutexLock(pOPCUA_ItemINFO->flagLock);
             if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
             {
                 if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("Variable %d failed with status %s\n", dataNotifications[i].ClientHandle,
@@ -182,19 +182,25 @@ void DevUaSubscription::dataChange(
 
                 }
             }
-
-            setTimestamp(pOPCUA_ItemINFO,UaDateTime(dataNotifications[i].Value.ServerTimestamp));
-
-            epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-            if(pOPCUA_ItemINFO->debug >= 4)
-                    errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
-                       pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
-                       pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                       pOPCUA_ItemINFO->noOut);
         }
         catch(dataChangeError) {
             pOPCUA_ItemINFO->stat = 1;
         }
+        // I'm not shure about the posibility of another exception but for the damage it could do!
+        catch(...) {
+            pOPCUA_ItemINFO->stat = 1;
+            errlogPrintf("%s\tdataChange: unexpected exception '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+            pOPCUA_ItemINFO->debug = 4;
+        }
+        epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+
+        setTimestamp(pOPCUA_ItemINFO,UaDateTime(dataNotifications[i].Value.ServerTimestamp));
+
+        if(pOPCUA_ItemINFO->debug >= 4)
+                errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
+                   pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
+                   pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
+                   pOPCUA_ItemINFO->noOut);
     } //end for
     return;
 }
