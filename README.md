@@ -3,23 +3,42 @@
 EPICS opcUa device support with Unified Automation C++ based
 [client sdk](https://www.unified-automation.com/products/client-sdk.html).
 
+## Prerequisites
+
+* Unified Automation C++ Based OPC UA Client SDK.
+  This device support has been developed using the 1.5.x series.
+
+* If you want to use crypto support (authentication/encryption), you need
+  libcrypto on your system - both when compiling the SDK and when generating
+  any binaries (IOCs).
+  The name of the package you have to install depends on the Linux distro:
+  openssl-devel on RedHat/CentOS/Fedora, libssl-dev on Debian/Ubuntu.
+  Use the CONFIG_SITE.local file (see below) where the binary is created
+  to set this option.
+
+* If you want support for XML definitions (e.g. for using the SDK examples
+  and tools), you need libxml2 an your system - both when compiling the SDK
+  and when generating any binaries (IOCs).
+  The name of the package you have to install depends on the Linux distro:
+  libxml2-devel on RedHat/CentOS/Fedora, libxml2-dev on Debian/Ubuntu.
+  Use the CONFIG_SITE.local file (see below) where the binary is created
+  to set this option.
 
 ## Build and Installation
 
 * This module has a standard EPICS module structure. It compiles against
   recent versions of EPICS Base 3.14, 3.15 and 3.16.
 
-* Depending on your Linux installation, install *libcrypto*.
-
-* When cloning this module, you may create local settings that are not being
-  traced by git.
+* When cloning this module from the repository, you may create local settings
+  that are not being traced by git and don't create conflicts:
 
   * Create *configure/RELEASE.local* and set *EPICS_BASE* to point to your
     EPICS installation.
 
   * Create *configure/CONFIG_SITE.local* and set *UASDK* to point to your
-    Unified Automation OPC UA C++ Client SDK installation.
-
+    Unified Automation C++ OPC UA Client SDK installation.
+    This is also where you select how the SDK libraries will be installed
+    on your target systems, and the optional support choices (see above).
 
 ## Features
 
