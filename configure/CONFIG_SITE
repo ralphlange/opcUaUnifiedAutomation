@@ -42,7 +42,7 @@ CHECK_RELEASE = YES
 #   SYSTEM = shared libs are in a system location
 #   PROVIDED = shared libs are in $(UASDK_DIR)
 #   INSTALL = shared libs are installed (copied) into this module
-UASDK_DEPLOY_MODE = SYSTEM
+UASDK_DEPLOY_MODE = PROVIDED
 UASDK_DIR = $(UASDK)/lib
 
 # These allow developers to override the CONFIG_SITE variable
