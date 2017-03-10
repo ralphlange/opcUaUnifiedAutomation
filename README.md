@@ -190,10 +190,10 @@ be improved soon.
   - CERTIFICATE_STORE: Optional. Not used now, just anonymous access supported
   - HOST: Optional. Neccessary if UA_GetHostname() failes.
   - MODE: How to interpret the opcUa links.
-    - BOTH=0: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
-    - NODEID=1
-    - BROWSEPATH=2
-    - BROWSEPATH_CONCAT=3: Means concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
+    - 0 BOTH: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
+    - 1 NODEID
+    - 2 BROWSEPATH
+    - 3 BROWSEPATH_CONCAT: Concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
   - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
 
 * opcuaDebug:
@@ -203,8 +203,12 @@ be improved soon.
 
 ```
 
-Set verbosity level of the support module. To check single records set the record.TPRO field > 1 to 
-get specific debug information to this record.
+Set verbosity level of the support module. 0 means quiet, just some realy serious 
+errors concerning the connection. Recomended is 1 for meaningful errors, debug=2..4 
+is real debug info.
+
+To check single records set the record.TPRO field > 1 to get specific error and debug 
+information to this record.
 
 * opcuaStat:
 
@@ -222,20 +226,11 @@ R0-8-2: Initial version
 
 R0-9: 
 
-* Simplify the writing of iocShell functions. this needs an update of st.cmd files! 
-
-* setup RELEASE and CONFIG_SITE to relativ paths for BASE and UASDK
-
-R0-9-1: 
-
-* To prevent git from tracing local definitions use configure/CONFIG_SITE.user and configure/RELEASE.user
 
 ## Known bugs
 
-* For big amount of channels, in our test > 800, the epics will break channel access
-connections after some hours. Need to restart IOC.
-
-* In the same test drvOpcuaSetup with mode NODEID will not connect to the opcua objects 
-on the server. No error Message! It works relyably but very slow with mode BOTH. In this 
-mode each object does its own connection.
+* drvOpcuaSetup with mode NODEID may not connect to many opcua objects on the 
+server. Tested with Softing Server: 150 items ok, 880 not. No error Message! 
+It works relyably but very slow with mode BOTH. In this mode each object does 
+its own connection - very slow.
 

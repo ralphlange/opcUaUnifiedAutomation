@@ -28,11 +28,11 @@ extern "C" {
 #endif
     typedef enum {BOTH=0,NODEID,BROWSEPATH,BROWSEPATH_CONCAT,GETNODEMODEMAX} GetNodeMode;
     const char *variantTypeStrings(int type);
+    extern char *getTime(char *buf);
     extern long opcUa_close(int verbose);
     extern long OpcUaSetupMonitors(void);
     extern long opcUa_io_report (int); /* Write IO report output to stdout. */
     extern void addOPCUA_Item(OPCUA_ItemINFO *h);
-    extern void signalHandler( int signum );
 // iocShell:
     extern long OpcUaWriteItems(OPCUA_ItemINFO* pOU_ItemINFO);
 // client:
