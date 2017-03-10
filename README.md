@@ -1,6 +1,6 @@
 # opcUaUnifiedAutomation
 
-EPICS opcUa device support with Unified Automation C++ based
+EPICS OPC UA device support using the Unified Automation C++ based
 [client sdk](https://www.unified-automation.com/products/client-sdk.html).
 
 ## Prerequisites
@@ -45,24 +45,32 @@ EPICS opcUa device support with Unified Automation C++ based
 * Data conversion for all integer and float data types. Data loss may occur for
   conversion from float to integer types and from long to short integer types.
 
-* In-Records support *SCAN="I/O Intr"* and all periodic scantimes.
+* In-records support *SCAN="I/O Intr"* and periodic scanning.
 
-* Out-records become bidirectional In/Out-records. They are allways inititalized
-  by the server. The EPICS Out-record will be updated if the OPC item is written 
-  by another device (e.g. PLC).
+* Out-records become bidirectional. They are always inititalized by reading from
+  the server. The EPICS Out-record will be updated if the OPC item is written
+  by another device (e.g. PLC, another OPC client, local HMI).
   
-  Writing to the hardware from two sides (EPICS and the hardware covered by the 
-  OPC server) at the same time can cause problems.
+  In OPC UA, the server always sits on top of the hardware that it interfaces,
+  and is written to (or updated) by both the hardware below and remote clients.
 
-  For values that are frequently written by the PLC a write by the EPICS record
-  will be overwritten in the opc-server by the PLC before it is sent to the PLC 
-  from the opc-server. In this case a caput will not be recognized by the PLC!
+  Writing to the OPC UA server from two sides (EPICS and the hardware below)
+  at almost the same time can cause race conditions and lead to problems.
 
-  This is a behaviour due to the opc-server and PLC, no bug in the EPICS device 
-  support.
+  For values that are frequently updated by the hardware,
+  a remote write from the EPICS record may be overwritten in the OPC server by
+  the hardware before the OPC server has sent it out to the hardware.
+  In this case the remote write from EPICS will not reach the hardware.
 
-  Also an EPICS write that follows immediately after a PLC write (very short time),
-  may be discarded by the device support. 
+  This behaviour is defined inside the OPC server that must handle such race
+  conditions. The client cannot directly influence it, and such ignored writes
+  are not caused by a bug in the EPICS device support.
+
+  Also an EPICS write that follows immediately after a PLC write may be
+  discarded by the device support.
+
+  As the out-record is always updated with changes from the OPC UA server,
+  it should properly reflect the status of the server at all times.
 
 * Support for the following record types:
 
@@ -76,21 +84,22 @@ EPICS opcUa device support with Unified Automation C++ based
 
 * LINR field of ai/ao records: 
 
-  - LINR='NO CONVERSION': The OPC value is direct written to the VAL field.
-    SMOO filter is done by the device support.
-  - LINR='SLOPE': The OPC value is written to the RVAL field and the record
-    conversion is performed. 
+  - LINR="NO CONVERSION": The OPC value is direct written to (taken from)
+    the VAL field, SMOO filtering is done by the device support.
+  - LINR="SLOPE": The OPC value is written to (taken from) the RVAL field,
+    conversion is performed by the record.
 
-* If OROC of ao-record and SCAN is set, the record will change its output as expected.
+* If SCAN and OROC of an ao record are set, the record will change its output
+  as expected.
   
-* waveform: Data conversion from native OpcUa type to waveform.FTVL type is
-  supported.
+* Waveform: Data conversion from native OpcUa type to the waveform record's
+  FTVL type is supported.
   
-* Timestamps: Default is the EPICS timestamp. With setting TSE="-2" the timestamp
- of the server will be used.
+* Timestamps: When setting TSE="-2" the OPC UA server timestamp is used.
 
-* Server needs to be up when starting iocShell, but it will reconnect if server 
-  is down for a while.
+* Initial connection and reconnection are handled appropriately.
+  The retry interval for the initial connection can be set using the variable
+  `connectInterval` (double), the default is 10.0 [sec].
 
 ## EPICS Database Examples:
 
@@ -174,9 +183,8 @@ seperated by a dot, begining after the 'Root.Objects' node.
   2:NewObject.MyArrayVar
 ```
 Some servers create node Identifiers by concatenating the BrowseNames. In this case
-it will be good to use the nodeId (see below) or there is the option to do 
-concatenation by the driver, set with an option of the client program, parameter
-on the drvOpcUaSetup() routine.
+it will be good to use the nodeId (see below). There is also the option to do that
+concatenation by the driver, which can be set with a parameter of `drvOpcuaSetup()`.
 
 ### Find node by Id:
 
@@ -190,13 +198,12 @@ the server access.
 
 ## Connection types
 
-OpcUa offers secure connections and the Unified Automation SDK supports this. It
-needs a certificate store to work. Up to now the device support doesn't offer a
-possibility to choose the servers endpoint, so just the anonymous connection is 
-supported. The certificate store path may be empty at initialisation . This will 
-be improved soon.
+OPC UA offers secure connections, which is supported by the Unified Automation SDK,
+requiring a certificate store to work. Currently the device support only supports
+the anonymous connection. The certificate store path parameter may be left empty
+at initialisation.
   
-## Ioc Shell fuctions
+## Ioc Shell functions
 
 * drvOpcuaSetup:
 
@@ -205,6 +212,8 @@ be improved soon.
 
 ```
 
+Set up connection to OPC UA server.
+
   - SERVER:PORT: Mandatory
   - CERTIFICATE_STORE: Optional. Not used now, just anonymous access supported
   - HOST: Optional. Neccessary if UA_GetHostname() failes.
@@ -212,8 +221,10 @@ be improved soon.
     - BOTH=0: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
     - NODEID=1
     - BROWSEPATH=2
-    - BROWSEPATH_CONCAT=3: Means concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
-  - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
+    - BROWSEPATH_CONCAT=3: Concatenate path 'a.b.c' to 'a/a.b/a.b.c'.
+      May be useful in some cases for specific servers.
+  - DEBUG: Debuglevel for the support module, set also with `opcuaDebug()`.
+    To debug specific records set their TPRO field to values > 1.
 
 * opcuaDebug:
 
@@ -222,8 +233,8 @@ be improved soon.
 
 ```
 
-Set verbosity level of the support module. To check single records set the record.TPRO field > 1 to 
-get specific debug information to this record.
+Set verbosity level of the support module.
+To debug specific records set their TPRO field to values > 1.
 
 * opcuaStat:
 
@@ -251,10 +262,12 @@ R0-9-1:
 
 ## Known bugs
 
-* For big amount of channels, in our test > 800, the epics will break channel access
-connections after some hours. Need to restart IOC.
+* For a big number of channels, in our test > 800, EPICS will break channel access
+  connections after some hours. Need to restart IOC.
 
-* In the same test drvOpcuaSetup with mode NODEID will not connect to the opcua objects 
-on the server. No error Message! It works relyably but very slow with mode BOTH. In this 
-mode each object does its own connection.
+* In the same test, drvOpcuaSetup with mode NODEID will not connect to the OPC UA items
+  on the server. No error Message! It works reliably but very slow with mode BOTH. In this
+  mode, each object does its own connection.
 
+* Please refer to the [issue tracker](https://github.com/bkuner/opcUaUnifiedAutomation/issues)
+  for more details and current status of bugs and issues.
