@@ -151,17 +151,17 @@ record(ao,"REC:setProp"){
     ${IOC}_registerRecordDeviceDriver pdbbase
 
     # anonymous
-    drvOpcUaSetup("opc.tcp://localhost:4841","","",0,0)
+    drvOpcuaSetup("opc.tcp://localhost:4841","","",0,0)
     
     # With certificates and host. Certificated connection not supported now :-(
-    #drvOpcUaSetup("opc.tcp://localhost:4841","/home/kuner/opcProjekt/certificates/hazel_store/certs","hazel",0,0)
+    #drvOpcuaSetup("opc.tcp://localhost:4841","/home/user/certificates/cert_store/certs","localhost",0,0)
     
     dbLoadRecords "db/freeopcuaTEST.db"
 
-    OpcUaDebug(1)
+    opcuaDebug(1)
     setIocLogDisable 1
     iocInit
-    OpcUaStat(0)
+    opcuaStat(0)
 ```
 
 ## Define OpcUa Links
