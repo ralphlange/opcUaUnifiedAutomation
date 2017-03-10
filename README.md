@@ -218,13 +218,11 @@ Set up connection to OPC UA server.
   - CERTIFICATE_STORE: Optional. Not used now, just anonymous access supported
   - HOST: Optional. Neccessary if UA_GetHostname() failes.
   - MODE: How to interpret the opcUa links.
-    - BOTH=0: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
-    - NODEID=1
-    - BROWSEPATH=2
-    - BROWSEPATH_CONCAT=3: Concatenate path 'a.b.c' to 'a/a.b/a.b.c'.
-      May be useful in some cases for specific servers.
-  - DEBUG: Debuglevel for the support module, set also with `opcuaDebug()`.
-    To debug specific records set their TPRO field to values > 1.
+    - 0 BOTH: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
+    - 1 NODEID
+    - 2 BROWSEPATH
+    - 3 BROWSEPATH_CONCAT: Concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
+  - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
 
 * opcuaDebug:
 
@@ -233,8 +231,12 @@ Set up connection to OPC UA server.
 
 ```
 
-Set verbosity level of the support module.
-To debug specific records set their TPRO field to values > 1.
+Set verbosity level of the support module. 0 means quiet, just some realy serious 
+errors concerning the connection. Recomended is 1 for meaningful errors, debug=2..4 
+is real debug info.
+
+To check single records set the record.TPRO field > 1 to get specific error and debug 
+information to this record.
 
 * opcuaStat:
 
@@ -250,6 +252,7 @@ Show all connections.
 
 R0-8-2: Initial version
 
+<<<<<<< HEAD
 ## Known bugs
 
 * For a big number of channels, in our test > 800, EPICS will break channel access
@@ -258,6 +261,17 @@ R0-8-2: Initial version
 * In the same test, drvOpcuaSetup with mode NODEID will not connect to the OPC UA items
   on the server. No error Message! It works reliably but very slow with mode BOTH. In this
   mode, each object does its own connection.
+=======
+R0-9: 
+
+
+## Known bugs
+
+* drvOpcuaSetup with mode NODEID may not connect to many opcua objects on the 
+server. Tested with Softing Server: 150 items ok, 880 not. No error Message! 
+It works relyably but very slow with mode BOTH. In this mode each object does 
+its own connection - very slow.
+>>>>>>> bf94f5580b5b6f77266f6ff8d1b3e71a02302517
 
 * Please refer to the [issue tracker](https://github.com/bkuner/opcUaUnifiedAutomation/issues)
   for more details and current status of bugs and issues.
