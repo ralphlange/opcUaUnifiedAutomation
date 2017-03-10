@@ -250,16 +250,6 @@ Show all connections.
 
 R0-8-2: Initial version
 
-R0-9: 
-
-* Simplify the writing of iocShell functions. this needs an update of st.cmd files! 
-
-* setup RELEASE and CONFIG_SITE to relativ paths for BASE and UASDK
-
-R0-9-1: 
-
-* To prevent git from tracing local definitions use configure/CONFIG_SITE.user and configure/RELEASE.user
-
 ## Known bugs
 
 * For a big number of channels, in our test > 800, EPICS will break channel access
