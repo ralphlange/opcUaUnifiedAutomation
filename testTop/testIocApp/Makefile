@@ -40,7 +40,6 @@ OPCUAIOC_LIBS += $(EPICS_BASE_IOC_LIBS)
 
 OPCUAIOC_SYS_LIBS_Linux += xml2 crypto
 
-USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/lib
 USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/libxml2/out32dll
 USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/openssl/out32dll 
 
