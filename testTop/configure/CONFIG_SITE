@@ -23,7 +23,6 @@ CHECK_RELEASE = YES
 
 # To install files into a location other than $(TOP) define
 #   INSTALL_LOCATION here.
-
 #INSTALL_LOCATION=</absolute/path/to/install/top>
 
 # Set this when the IOC and build host use different paths
@@ -50,7 +49,7 @@ UASDK_USE_CRYPTO = YES
 UASDK_USE_XMLPARSER = YES
 
 UASDK_LIBS = uaclient uapki uabase uastack
-ifeq ($UASDK_USE_XMLPARSER),YES)
+ifeq ($(UASDK_USE_XMLPARSER),YES)
 UASDK_LIBS += xmlparser
 endif
 USR_INCLUDES += $(foreach lib, $(UASDK_LIBS), -I$(UASDK)/include/$(lib))
@@ -70,4 +69,3 @@ USR_INCLUDES += $(foreach lib, $(UASDK_LIBS), -I$(UASDK)/include/$(lib))
 #-include $(TOP)/../CONFIG_SITE.local
 #-include $(TOP)/../configure/CONFIG_SITE.local
 #-include $(TOP)/configure/CONFIG_SITE.local
-

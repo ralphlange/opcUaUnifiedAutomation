@@ -60,7 +60,11 @@
 #include <devOpcUa.h>
 #include <drvOpcUa.h>
 
+#ifdef _WIN32
+__inline int debug_level(dbCommon *prec) {
+#else
 inline int debug_level(dbCommon *prec) {
+#endif
     if(prec->dpvt)
         return ((OPCUA_ItemINFO *) prec->dpvt)->debug;
     else
@@ -631,10 +635,10 @@ static long read(dbCommon * prec) {
 }
 
 static long write(dbCommon *prec) {
+	long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
-    long ret = 0;
-
+    
     if(DEBUG_LEVEL >= 3)
         errlogPrintf("write %s\t UDF:%i, noOut=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
 

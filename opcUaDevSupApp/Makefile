@@ -13,6 +13,8 @@ UASDK_LIBS = uabase uaclient uapki uastack xmlparser
 
 USR_INCLUDES += $(foreach module, $(UASDK_LIBS), -I$(UASDK)/include/$(module))
 
+USR_INCLUDES_WIN32 += -I$(BOOST)
+
 ifeq ($(UASDK_DEPLOY_MODE),SYSTEM)
 USR_SYS_LIBS += $(UASDK_LIBS)
 endif
@@ -40,7 +42,6 @@ include $(TOP)/configure/RULES
 #----------------------------------------
 #  ADD RULES AFTER THIS LINE
 
-
 ifeq ($(UASDK_DEPLOY_MODE),INSTALL)
 build: $(EXTLIB_INSTALLS)
 
@@ -51,6 +52,4 @@ $(INSTALL_LIB)/$(LIB_PREFIX)%$(LIB_SUFFIX) : $(UASDK_DIR)/$(LIB_PREFIX)%$(LIB_SU
 $(INSTALL_LIB)/$(SHRLIB_PREFIX)%$(SHRLIB_SUFFIX) : $(UASDK_DIR)/$(SHRLIB_PREFIX)%$(SHRLIB_SUFFIX)
 	$(ECHO) "Installing shared library $@ from Unified Automation SDK"
 	$(INSTALL) -d -m 555 $< $(@D)
-
 endif
-

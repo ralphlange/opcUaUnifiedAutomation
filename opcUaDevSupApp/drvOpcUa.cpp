@@ -186,7 +186,9 @@ void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
 static double connectInterval = 10.0;
-epicsExportAddress(double, connectInterval);
+extern "C" {
+    epicsExportAddress(double, connectInterval);
+}
 
 // global variables
 

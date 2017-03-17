@@ -38,7 +38,14 @@ OPCUAIOC_LIBS += opcUa
 OPCUAIOC_LIBS += $(UASDK_LIBS)
 OPCUAIOC_LIBS += $(EPICS_BASE_IOC_LIBS)
 
-OPCUAIOC_SYS_LIBS += xml2 crypto
+OPCUAIOC_SYS_LIBS_LINUX += xml2 crypto
+
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/lib
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/libxml2/out32dll
+USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/openssl/out32dll 
+
+OPCUAIOC_SYS_LIBS_WIN32 += ws2_32 advapi32 user32 ssleay32 libeay32 crypt32 libxml2 ole32 oleaut32 strmiids
+
 
 include $(TOP)/configure/RULES
 #----------------------------------------

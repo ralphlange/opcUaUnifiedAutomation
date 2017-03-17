@@ -74,7 +74,7 @@ int getOptions(int argc, char *argv[]) {
 
     int hasCertOption = 0;
     while((c =  getopt(argc, argv, "wmhvM:V:c:u:H:s:")) != EOF)
-	{
+    {
         switch (c)
         {
         case 'h':
