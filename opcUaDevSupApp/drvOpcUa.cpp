@@ -27,6 +27,7 @@
 #include <epicsTypes.h>
 #include <epicsPrint.h>
 #include <epicsTime.h>
+#include <epicsTimer.h>
 #include <epicsExport.h>
 #include <registryFunction.h>
 #include <dbCommon.h>
@@ -40,8 +41,22 @@
 #include "uabase.h"
 #include "uaclientsdk.h"
 #include "uasession.h"
+
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"
+
+// Wrapper to ignore return values
+template<typename T>
+inline void ignore_result(T /* unused result */) {}
+
+char *getTime(char *timeBuffer)
+{
+    epicsTimeStamp ts;
+    epicsTimeGetCurrent(&ts);
+    epicsTimeToStrftime(timeBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&ts);
+    return timeBuffer;
+}
+
 
 using namespace UaClientSdk;
 
@@ -78,13 +93,28 @@ const char *variantTypeStrings(int type)
     }
 }
 
+inline const char *serverStatusStrings(UaClient::ServerStatus type)
+{
+    switch (type) {
+    case UaClient::Disconnected:                      return "Disconnected";
+    case UaClient::Connected:                         return "Connected";
+    case UaClient::ConnectionWarningWatchdogTimeout:  return "ConnectionWarningWatchdogTimeout";
+    case UaClient::ConnectionErrorApiReconnect:       return "ConnectionErrorApiReconnect";
+    case UaClient::ServerShutdown:                    return "ServerShutdown";
+    case UaClient::NewSessionCreated:                 return "NewSessionCreated";
+    default:                                          return "Unknown Status Value";
+    }
+}
+
 //inline int64_t getMsec(DateTime dateTime){ return (dateTime.Value % 10000000LL)/10000; }
+
+class autoSessionConnect;
 
 class DevUaClient : public UaSessionCallback
 {
     UA_DISABLE_COPY(DevUaClient);
 public:
-    DevUaClient();
+    DevUaClient(int debug);
     virtual ~DevUaClient();
 
     // UaSessionCallback implementation ----------------------------------------------------
@@ -94,14 +124,15 @@ public:
     UaString applicationCertificate;
     UaString applicationPrivateKey;
     UaString hostName;
-    UaStatus connect(UaString url);
+    UaString url;
+    UaStatus connect();
     UaStatus disconnect();
     UaStatus subscribe();
     UaStatus unsubscribe();
     long getNodes();
     void setBadQuality();
 
-    long setOPCUA_Item(OPCUA_ItemINFO *h);
+    void addOPCUA_Item(OPCUA_ItemINFO *h);
     UaStatus getAllNodesFromBrowsePath();
     long getNodeFromBrowsePath(OpcUa_UInt32 bpItem);
     long getNodeFromId(OpcUa_UInt32 bpItem);
@@ -111,18 +142,51 @@ public:
     UaStatus writeFunc(ServiceSettings &serviceSettings,UaWriteValues &nodesToWrite,UaStatusCodeArray &results,UaDiagnosticInfos &diagnosticInfos);
     void writeComplete(OpcUa_UInt32 transactionId,const UaStatus&result,const UaStatusCodeArray& results,const UaDiagnosticInfos& diagnosticInfos);
     void itemStat(int v);
+    void setDebug(int debug);
+    int  getDebug();
+
     std::vector<UaNodeId>         vUaNodeId;
     std::vector<OPCUA_ItemINFO *> vUaItemInfo;
     GetNodeMode mode;
-    int debug;
 private:
+    int debug;
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
-    UaClient::ServerStatus connectionStatusStored;
-    int needNewSubscription;
+    UaClient::ServerStatus serverConnectionStatus;
+    bool initialSubscriptionOver;
+    autoSessionConnect *autoConnector;
+    epicsTimerQueueActive &queue;
 };
+
+// Timer to retry connecting the session when the server is down at IOC startup
+class autoSessionConnect : public epicsTimerNotify {
+public:
+    autoSessionConnect(DevUaClient *client, const double delay, epicsTimerQueueActive &queue)
+        : timer(queue.createTimer())
+        , client(client)
+        , delay(delay)
+    {}
+    virtual ~autoSessionConnect() { timer.destroy(); }
+    void start() { timer.start(*this, delay); }
+    virtual expireStatus expire(const epicsTime &/*currentTime*/) {
+        UaStatus result = client->connect();
+        if (result.isBad()) {
+            return expireStatus(restart, delay);
+        } else {
+            return expireStatus(noRestart);
+        }
+    }
+private:
+    epicsTimer &timer;
+    DevUaClient *client;
+    const double delay;
+};
+
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
+
+static double connectInterval = 10.0;
+epicsExportAddress(double, connectInterval);
 
 // global variables
 
@@ -150,33 +214,24 @@ extern "C" {
     }
 }
 
-void signalHandler( int signum )
-{
-    exit(1);
-}
-
-DevUaClient::DevUaClient()
+DevUaClient::DevUaClient(int debug=0)
+    : mode(BROWSEPATH)
+    , debug(debug)
+    , serverConnectionStatus(UaClient::Disconnected)
+    , initialSubscriptionOver(false)
+    , queue (epicsTimerQueueActive::allocate(true))
 {
     m_pSession            = new UaSession();
-    m_pDevUaSubscription = NULL;
-    connectionStatusStored= UaClient::Disconnected;
-    needNewSubscription   = 0;
-    DevUaClient::mode = BROWSEPATH;
-    debug = 0;
+    m_pDevUaSubscription  = new DevUaSubscription(this->debug);
+    autoConnector         = new autoSessionConnect(this, connectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()
 {
-    if (m_pDevUaSubscription)
-    {
-        // delete local subscription object
-        delete m_pDevUaSubscription;
-        m_pDevUaSubscription = NULL;
-    }
+    delete m_pDevUaSubscription;
     if (m_pSession)
     {
-        // disconnect if we're still connected
-        if (m_pSession->isConnected() != OpcUa_False)
+        if (m_pSession->isConnected())
         {
             ServiceSettings serviceSettings;
             m_pSession->disconnect(serviceSettings, OpcUa_True);
@@ -184,88 +239,88 @@ DevUaClient::~DevUaClient()
         delete m_pSession;
         m_pSession = NULL;
     }
+    queue.release();
+    delete autoConnector;
 }
 
 void DevUaClient::connectionStatusChanged(
     OpcUa_UInt32             clientConnectionId,
     UaClient::ServerStatus   serverStatus)
 {
-    char currentBuffer[30];
-    epicsTimeStamp ts;
-    epicsTimeGetCurrent(&ts);
-    epicsTimeToStrftime(currentBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&ts);
-
     OpcUa_ReferenceParameter(clientConnectionId);
+    char timeBuffer[30];
 
-    errlogPrintf("%s opcUaClient: Connection status changed to: ",currentBuffer);
+    if(debug)
+        errlogPrintf("%s opcUaClient: Connection status changed to %d (%s)\n",
+                 getTime(timeBuffer),
+                 serverStatus,
+                 serverStatusStrings(serverStatus));
+
     switch (serverStatus)
     {
-    case UaClient::Disconnected:
-        errlogPrintf("Disconnected %d\n",serverStatus);
-        connectionStatusStored = UaClient::Disconnected;
+    case UaClient::ConnectionErrorApiReconnect:
+    case UaClient::ServerShutdown:
+        this->setBadQuality();
+        this->unsubscribe();
+        break;
+    case UaClient::ConnectionWarningWatchdogTimeout:
+        this->setBadQuality();
         break;
     case UaClient::Connected:
-        errlogPrintf("Connected %d\n",serverStatus);
-        if(connectionStatusStored == UaClient::ConnectionErrorApiReconnect) {
-            this->unsubscribe();
+        if(serverConnectionStatus == UaClient::ConnectionErrorApiReconnect
+                || serverConnectionStatus == UaClient::NewSessionCreated
+                || (serverConnectionStatus == UaClient::Disconnected && initialSubscriptionOver)) {
             this->subscribe();
             this->getNodes();
             this->createMonitoredItems();
         }
-        connectionStatusStored = UaClient::Connected;
         break;
-    case UaClient::ConnectionWarningWatchdogTimeout:
-        errlogPrintf("ConnectionWarningWatchdogTimeout %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionWarningWatchdogTimeout;
-        this->setBadQuality();
-        break;
-    case UaClient::ConnectionErrorApiReconnect:
-        errlogPrintf("ConnectionErrorApiReconnect %d\n",serverStatus);
-        connectionStatusStored = UaClient::ConnectionErrorApiReconnect;
-        this->setBadQuality();
-        break;
-    case UaClient::ServerShutdown:
-        errlogPrintf("ServerShutdown %d\n",serverStatus);
-        connectionStatusStored = UaClient::ServerShutdown;
-        this->setBadQuality();
-        break;
+    case UaClient::Disconnected:
     case UaClient::NewSessionCreated:
-        errlogPrintf("NewSessionCreated %d\n",serverStatus);
-        connectionStatusStored = UaClient::NewSessionCreated;
         break;
     }
+    serverConnectionStatus = serverStatus;
 }
 
 // Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
 void DevUaClient::setBadQuality()
 {
+    epicsTimeStamp	 now;
+    epicsTimeGetCurrent(&now);
+
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
         OPCUA_ItemINFO *pOPCUA_ItemINFO = vUaItemInfo[bpItem];
+        pOPCUA_ItemINFO->prec->time = now;
+        pOPCUA_ItemINFO->noOut = 1;
         pOPCUA_ItemINFO->stat = 1;
-        if( pOPCUA_ItemINFO->inpDataType ) { // is OUT Record
+        if(pOPCUA_ItemINFO->inpDataType) // is OUT Record
             callbackRequest(&(pOPCUA_ItemINFO->callback));
-        }
-        else {// is IN Record
+        else
             scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );
-        }
     }
 }
 
 // add OPCUA_ItemINFO to vUaItemInfo Check and seutp nodes is done by getNodes()
-long DevUaClient::setOPCUA_Item(OPCUA_ItemINFO *h)
+void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
 {
     vUaItemInfo.push_back(h);
     h->itemIdx = vUaItemInfo.size()-1;
-    if(h->debug >= 3) errlogPrintf("%s\tDevUaClient::setOPCUA_ItemINFO: idx=%lu\n",h->prec->name,vUaItemInfo.size()-1);
-/*    if(! getNodeFromBrowsePath(h->itemIdx ))
-        return 0;
-    if(getNodeFromId(h->itemIdx) )
-        return 1;
-*/
-    return 0;
+    if(h->debug >= 3)
+        errlogPrintf("%s\tDevUaClient::addOPCUA_ItemINFO: idx=%d\n", h->prec->name, h->itemIdx);
+}
+void DevUaClient::setDebug(int d)
+{
+    m_pDevUaSubscription->debug = d;
+    this->debug = d;
 }
 
-UaStatus DevUaClient::connect(UaString sURL)
+int DevUaClient::getDebug()
+{
+    return this->debug;
+}
+
+
+UaStatus DevUaClient::connect()
 {
     UaStatus result;
 
@@ -277,17 +332,18 @@ UaStatus DevUaClient::connect(UaString sURL)
     sessionConnectInfo.sProductUri      = "urn:HelmholtzgesellschaftBerlin:TestClient";
     sessionConnectInfo.sSessionName     = sessionConnectInfo.sApplicationUri;
 
-
     // Security settings are not initialized - we connect without security for now
     SessionSecurityInfo sessionSecurityInfo;
 
-    if(debug) errlogPrintf("\nConnecting to %s\n", sURL.toUtf8());
-    result = m_pSession->connect(sURL,sessionConnectInfo,sessionSecurityInfo,this);
+    if(debug) errlogPrintf("DevUaClient::connect() connecting to '%s'\n", url.toUtf8());
+    result = m_pSession->connect(url, sessionConnectInfo, sessionSecurityInfo, this);
 
     if (result.isBad())
     {
-        connectionStatusStored = UaClient::Disconnected;
-        errlogPrintf("Connect failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaClient::connect() connection attempt failed with status %#8x (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
+        autoConnector->start();
     }
 
     return result;
@@ -299,20 +355,22 @@ UaStatus DevUaClient::disconnect()
 
     // Default settings like timeout
     ServiceSettings serviceSettings;
-
-    if(debug) errlogPrintf("\nDisconnecting");
+    char buf[30];
+    if(debug) errlogPrintf("%s Disconnecting the session\n",getTime(buf));
     result = m_pSession->disconnect(serviceSettings,OpcUa_True);
 
     if (result.isBad())
     {
-        errlogPrintf("Disconnect failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("%s DevUaClient::disconnect failed with status %#8x (%s)\n",
+                     getTime(buf),result.statusCode(),
+                     result.toString().toUtf8());
     }
 
     return result;
 }
+
 UaStatus DevUaClient::subscribe()
 {
-    m_pDevUaSubscription = new DevUaSubscription(this->debug);
     return m_pDevUaSubscription->createSubscription(m_pSession);
 }
 
@@ -320,6 +378,7 @@ UaStatus DevUaClient::unsubscribe()
 {
     return m_pDevUaSubscription->deleteSubscription();
 }
+
 //get whole bunch of nodes from browsePaths, no direcet node access
 UaStatus DevUaClient::getAllNodesFromBrowsePath()
 {
@@ -335,7 +394,7 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
     std::string             partPath;
 
     if(debug)   errlogPrintf("DevUaClient::getAllNodesFromBrowsePath()");
-    if(debug>1) errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++)        errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
+    if(debug>1) {errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++) errlogPrintf("%4d %s '%s'\n",bpItem,(vUaItemInfo[bpItem])->prec->name,(vUaItemInfo[bpItem])->ItemPath);}
     browsePaths.create(itemCount);
     for(bpItem=0;bpItem<itemCount;bpItem++) {
         std::vector<std::string> devpath; // parsed item path
@@ -354,7 +413,7 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
         browsePaths[bpItem].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
         pathElements.create(lenPath);
         for(int i=0; i<lenPath;i++){
-            if(debug) errlogPrintf("%s|",devpath[i].c_str());
+            //if(debug>1) errlogPrintf("%s|",devpath[i].c_str());
 
             pathElements[i].IncludeSubtypes = OpcUa_True;
             pathElements[i].IsInverse       = OpcUa_False;
@@ -370,7 +429,7 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
         }
         browsePaths[bpItem].RelativePath.NoOfElements = pathElements.length();
         browsePaths[bpItem].RelativePath.Elements = pathElements.detach();
-        if(debug) errlogPrintf("\n");
+        if(debug>1) errlogPrintf("\n");
     }
 
 
@@ -387,8 +446,8 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
         }
         else {
             vUaNodeId.push_back(UaNodeId());
-            if(vUaNodeId.at(i).isNull())
-                errlogPrintf("%s isNULL\n",(vUaItemInfo[bpItem])->ItemPath);
+            if(vUaNodeId.at(i).isNull() && debug)
+                errlogPrintf("%s not found\n",(vUaItemInfo[bpItem])->ItemPath);
         }
     }
     return status;
@@ -398,27 +457,27 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
 {
     UaStatus status;
     OPCUA_ItemINFO  *pOPCUA_ItemINFO;
-    OpcUa_UInt16    NdIdx;
+    OpcUa_UInt16    NsIdx;
     char            ItemPath[ITEMPATHLEN];
     char            *endptr;
 
     if(debug>1) errlogPrintf("DevUaClient::getNodeFromBrowsePath\n");
     pOPCUA_ItemINFO = vUaItemInfo[bpItem];
  
-    std::vector<std::string> itempath; // parsed item path
-    boost::split(itempath,pOPCUA_ItemINFO->ItemPath,boost::is_any_of(":"));
-    if(itempath.size() != 2)
-        return 1;
-    NdIdx = (OpcUa_UInt16) strtol(itempath[0].c_str(),&endptr,10); // ItemPath is nodeId
-    strncpy(ItemPath,itempath[1].c_str(),ITEMPATHLEN);
+    // Syntax:
+    // <namespace index>:<browsepath>
+    NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
+    if (*endptr++ != ':') return 1;
+    strncpy(ItemPath, endptr, ITEMPATHLEN);
+    ItemPath[ITEMPATHLEN-1] = '\0';
 
-    if(debug>1) errlogPrintf("\tparsed NS:%hu PATH: %s\n",NdIdx,ItemPath);
+    if(debug>3) errlogPrintf("\tparsed NS:%hu PATH: %s\n",NsIdx,ItemPath);
+
     UaDiagnosticInfos       diagnosticInfos;
     ServiceSettings         serviceSettings;
     UaRelativePathElements  pathElements;
     UaBrowsePaths           browsePaths;
     UaBrowsePathResults     browsePathResults;
-    std::string             partPath;
 
     browsePaths.create(1);
     std::vector<std::string> devpath; // parsed item path
@@ -426,20 +485,19 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     int lenPath = devpath.size();
     browsePaths[0].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
     pathElements.create(lenPath);
-    for(int i=0; i<lenPath;i++){
-        if(debug>1) errlogPrintf("%s|",devpath[i].c_str());
-
+    for(int i=0; i<lenPath; i++) {
+        std::string partPath;
         pathElements[i].IncludeSubtypes = OpcUa_True;
         pathElements[i].IsInverse       = OpcUa_False;
         pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
         if(DevUaClient::mode==BROWSEPATH_CONCAT) {
-            partPath = devpath[0];
-            for(int j=1;j<=i;j++) partPath += "."+devpath[j];
+            if(i) partPath += ".";
+            partPath += devpath[i];
         } else {
             partPath = devpath[i];
         }
         OpcUa_String_AttachCopy(&pathElements[i].TargetName.Name, partPath.c_str());
-        pathElements[i].TargetName.NamespaceIndex = NdIdx;
+        pathElements[i].TargetName.NamespaceIndex = NsIdx;
     }
     browsePaths[0].RelativePath.NoOfElements = pathElements.length();
     browsePaths[0].RelativePath.Elements = pathElements.detach();
@@ -451,7 +509,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
         browsePathResults,
         diagnosticInfos);
 
-    if(debug>1) errlogPrintf("DONE translateBrowsePathsToNodeIds: %s len=%d\n",status.toString().toUtf8(),browsePathResults.length());
+    if(debug>3) errlogPrintf("DONE translateBrowsePathsToNodeIds: %s len=%d\n",status.toString().toUtf8(),browsePathResults.length());
 
     if( (browsePathResults.length() == 1) && ( OpcUa_IsGood(browsePathResults[0].StatusCode) )) {
         UaNodeId tempNode(browsePathResults[0].Targets[0].TargetId.NodeId);
@@ -459,7 +517,7 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     }
     else {
         vUaNodeId.push_back(UaNodeId());
-        if(vUaNodeId.at(bpItem).isNull())
+        if(vUaNodeId.at(bpItem).isNull() && debug)
             errlogPrintf("DevUaClient::getNodeFromBrowsePath can't find '%s'\n",(vUaItemInfo[bpItem])->ItemPath);
         return 1;
 
@@ -478,26 +536,27 @@ long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
     OPCUA_ItemINFO      *pOPCUA_ItemINFO;
     UaNodeId            tempNode;
     char                *endptr;
-    OpcUa_UInt16        NdIdx;
+    OpcUa_UInt16        NsIdx;
     char                ItemId[ITEMPATHLEN];
 
     nodeToRead.create(1);
     pOPCUA_ItemINFO = vUaItemInfo[bpItem];
 
-    std::vector<std::string> itempath; // parsed item path
-    boost::split(itempath,pOPCUA_ItemINFO->ItemPath,boost::is_any_of(","));
-    if(itempath.size() != 2)
-        return 1;
+    // Syntax:
+    // <namespace index>,<identifier>
+    NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
+    if (*endptr++ != ',') return 1;
+    strncpy(ItemId, endptr, ITEMPATHLEN);
+    ItemId[ITEMPATHLEN-1] = '\0';
 
-    NdIdx = (OpcUa_UInt16) strtol(itempath[0].c_str(),&endptr,10); // ItemPath is nodeId
-    strncpy(ItemId,itempath[1].c_str(),ITEMPATHLEN);
-    OpcUa_UInt32 itemId = (OpcUa_UInt32) strtol(ItemId,&endptr,10); // ItemPath is nodeId
-    if(ItemId != endptr)  // is numeric id
-        tempNode.setNodeId( itemId, NdIdx);
-    else            // is string id
-        tempNode.setNodeId(UaString(ItemId), NdIdx);
+    // test identifier for number
+    OpcUa_UInt32 itemId = (OpcUa_UInt32) strtol(ItemId, &endptr, 10);
+    if(ItemId != endptr) // numerical id
+        tempNode.setNodeId( itemId, NsIdx);
+    else                 // string id
+        tempNode.setNodeId(UaString(ItemId), NsIdx);
 
-    if(debug>1) errlogPrintf("SETUP NODE: '%s' Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
+    if(debug>2) errlogPrintf("SETUP NODE: '%s' Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
     nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
     tempNode.copyTo(&(nodeToRead[0].NodeId)) ;
 
@@ -514,49 +573,14 @@ long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
 
 long DevUaClient::getAllNodesFromId()
 {
-    UaStatus status;
-
-    ServiceSettings     serviceSettings;
-    UaDataValues        values;
-    UaDiagnosticInfos   diagnosticInfos;
-    UaReadValueIds      nodeToRead;
     OpcUa_UInt32        nrOfItems;
 
     nrOfItems = vUaItemInfo.size();
-    nodeToRead.create(nrOfItems);
-    if(debug) errlogPrintf("DevUaClient::getAllNodesFromId()");
-    for(OpcUa_UInt32 i=0;i<nrOfItems;i++) {
-        OPCUA_ItemINFO      *pOPCUA_ItemINFO;
-        UaNodeId            tempNode;
-        char                *endptr;
-        OpcUa_UInt16        NdIdx;
-        char                ItemId[ITEMPATHLEN];
-
-        pOPCUA_ItemINFO = vUaItemInfo[i];
-
-        std::vector<std::string> itempath; // parsed item path
-        boost::split(itempath,pOPCUA_ItemINFO->ItemPath,boost::is_any_of(","));
-        if(itempath.size() != 2)
-            return 1;
-
-        NdIdx = (OpcUa_UInt16) strtol(itempath[0].c_str(),&endptr,10); // ItemPath is nodeId
-        strncpy(ItemId,itempath[1].c_str(),ITEMPATHLEN);
-        OpcUa_UInt32 itemId = (OpcUa_UInt32) strtol(ItemId,&endptr,10); // ItemPath is nodeId
-        if(ItemId != endptr)  // is numeric id
-            tempNode.setNodeId( itemId, NdIdx);
-        else            // is string id
-            tempNode.setNodeId(UaString(ItemId), NdIdx);
-        if(debug>1) errlogPrintf("SETUP NODE '%s': Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
-        nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
-        tempNode.copyTo(&(nodeToRead[i].NodeId)) ;
-        vUaNodeId.push_back(tempNode);
+    if(debug) errlogPrintf("DevUaClient::getAllNodesFromId()\n");
+    for(OpcUa_UInt32 i=0; i<nrOfItems; i++) {
+        ignore_result( getNodeFromId(i) );
     }
 
-    status = m_pSession->read(serviceSettings,0,OpcUa_TimestampsToReturn_Both,nodeToRead,values,diagnosticInfos);
-    for(OpcUa_UInt32 i=0;i<nrOfItems;i++) {
-        if (OpcUa_IsBad(values[i].StatusCode))
-            vUaNodeId[i] = (UaNodeId());
-    }
     return 0;
 }
 
@@ -568,32 +592,37 @@ long DevUaClient::getNodes()
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
     vUaNodeId.clear();
     if(false == m_pSession->isConnected() ) {
-         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected\n");
+         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected - deferring initialisation\n");
+         initialSubscriptionOver = true;
          return 1;
     }
     switch(mode) {
     case BOTH:
-        errlogPrintf("DevUaClient::getNodes(BOTH)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BOTH)\n");
         for(OpcUa_UInt32 bpItem=0;bpItem<itemCount;bpItem++) {
-            if(debug) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
+            if(debug>1) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
             if(getNodeFromBrowsePath( bpItem))
                 if(getNodeFromId(bpItem) )
                     return 1;
         }
         break;
     case NODEID:
-        errlogPrintf("DevUaClient::getNodes(NODEID)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(NODEID)\n");
         ret = getAllNodesFromId();
         break;
     case BROWSEPATH:
     case BROWSEPATH_CONCAT:
-        errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
+        if(debug) errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
         status = getAllNodesFromBrowsePath();
         if(status.isBad())
             ret=1;
         break;
-    default: errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n",mode);
+    default:
+        errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n", mode);
     }
+
+    if(debug)  errlogPrintf("OPCUA session initialised (monitoring %lu items on 1 subscription)\n",(unsigned long) vUaNodeId.size());
+
     if(debug>1) {
         errlogPrintf("DevUaClient::getNodes() Dump nodes and items after init\n");
         for(OpcUa_UInt32 i=0;i<vUaNodeId.size();i++) {
@@ -601,7 +630,7 @@ long DevUaClient::getNodes()
             tempNode = vUaNodeId.at(i);
             OPCUA_ItemINFO *pOpcItem;
             pOpcItem = vUaItemInfo.at(i);
-            errlogPrintf("  path:'%s'\t nd:'%s'\n",pOpcItem->ItemPath,tempNode.toFullString().toUtf8());
+            errlogPrintf("%4d %s\tpath:'%s'\t id:'%s'\n",i,pOpcItem->prec->name,pOpcItem->ItemPath,tempNode.toFullString().toUtf8());
         }
     }
     return ret;
@@ -625,11 +654,13 @@ UaStatus DevUaClient::writeFunc(ServiceSettings &serviceSettings,UaWriteValues &
 
 void DevUaClient::writeComplete( OpcUa_UInt32 transactionId,const UaStatus& result,const UaStatusCodeArray& results,const UaDiagnosticInfos& diagnosticInfos)
 {
-    if(result.isBad())
+    if(result.isBad() && debug) {
         errlogPrintf("Bad Write Result: ");
-        for(unsigned int i=0;i<results.length();i++)
+        for(unsigned int i=0;i<results.length();i++) {
             errlogPrintf("%s ",result.isBad()? result.toString().toUtf8():"ok");
-        errlogPrintf("\n");
+            errlogPrintf("\n");
+    }
+}
 }
 
 UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos)
@@ -647,7 +678,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
             (pMyClient->vUaNodeId[i]).copyTo(&(nodeToRead[j].NodeId)) ;
             j++;
         }
-        else {
+        else if (debug){
             errlogPrintf("%s DevUaClient::readValues: Skip illegal node: \n",vUaItemInfo[i]->prec->name);
         }
     }
@@ -659,7 +690,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
         nodeToRead,
         values,
         diagnosticInfos);
-    if(result.isBad() ) {
+    if(result.isBad() && debug) {
         errlogPrintf("FAILED: DevUaClient::readFunc()\n");
         if(diagnosticInfos.noOfStringTable() > 0) {
             for(unsigned int i=0;i<diagnosticInfos.noOfStringTable();i++)
@@ -671,18 +702,17 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 
 void DevUaClient::itemStat(int verb)
 {
-    errlogPrintf("OpcUa driver: Connected items: %lu\n",vUaItemInfo.size());
+    errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
     if(verb>0) {
         if(verb==1) errlogPrintf("Only bad signals\n");
-        errlogPrintf("idx record Name          NS:PATH                                                       epics Type         opcUa Type        CB Out\n");
+        errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
         for(unsigned int i=0;i< vUaItemInfo.size();i++) {
             OPCUA_ItemINFO* pOPCUA_ItemINFO = vUaItemInfo[i];
             if((verb>1) || ((verb==1)&&(pOPCUA_ItemINFO->stat==1)))  // verb=1 only the bad, verb>1 all
-                errlogPrintf("%3d %-20s %-60s %2d,%-15s %2d:%-15s stat=%d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
-                   pOPCUA_ItemINFO->ItemPath,
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
                    pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
                    pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                   pOPCUA_ItemINFO->stat);
+                   pOPCUA_ItemINFO->stat,pOPCUA_ItemINFO->ItemPath );
         }
     }
 }
@@ -729,6 +759,7 @@ void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo)
 long OpcReadValues(int verbose,int monitored)
     {
     UaStatus status;
+    int debugStat = pMyClient->getDebug();
 
     ServiceSettings   serviceSettings;
     UaDataValues      values;
@@ -736,10 +767,10 @@ long OpcReadValues(int verbose,int monitored)
 
     if(verbose){
         errlogPrintf("OpcReadValues\n");
-        pMyClient->debug = verbose;
+        pMyClient->setDebug(verbose);
     }
     if(pMyClient->getNodes() ) {
-        errlogPrintf("\n");
+        pMyClient->setDebug(debugStat);
         return 1;
     }
     if(monitored)
@@ -764,11 +795,13 @@ long OpcReadValues(int verbose,int monitored)
             errlogPrintf("READ VALUES failed with status %s\n", status.toString().toUtf8());
         }
     }
+    pMyClient->setDebug(debugStat);
     return 0;
 }
 /* Client: write one value. First setup items by setOPCUA_Item() function */
 long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
-    {
+{
+    int debugStat = pMyClient->getDebug();
     UaStatus            status;
     ServiceSettings     serviceSettings;    // Use default settings
     UaVariant         tempValue;
@@ -780,7 +813,7 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
 
     if(verbose){
         errlogPrintf("OpcWriteValue(%d,%f)\nTRANSLATEBROWSEPATH\n",opcUaItemIndex,val);
-        pMyClient->debug = verbose;
+        pMyClient->setDebug(verbose);
     }
     
     nodesToWrite.create(1);
@@ -796,8 +829,10 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
     if ( status.isBad() )
     {
         errlogPrintf("** Error: UaSession::write failed [ret=%s] **\n", status.toString().toUtf8());
+        pMyClient->setDebug(debugStat);
         return 1;
     }
+    pMyClient->setDebug(debugStat);
     return 0;
 }
 /* iocShell: record write func  */
@@ -908,9 +943,9 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         }
         break;
     default:
-        errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
+        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
     }
-    if(status == 1) {
+    if((status==1) && pMyClient->getDebug()) {
         errlogPrintf("%s\tOpcUaWriteItems: unsupported record data type: '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
         return 1;
     }
@@ -918,9 +953,9 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
     tempValue.copyTo(&nodesToWrite[0].Value.Value);
 
     status = pMyClient->writeFunc(serviceSettings,nodesToWrite,results,diagnosticInfos);
-    if ( status.isBad() )
+    if ( status.isBad()  )
     {
-        errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",pOPCUA_ItemINFO->prec->name,status.toString().toUtf8());
+        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",pOPCUA_ItemINFO->prec->name,status.toString().toUtf8());
         return 1;
     }
     return 0;
@@ -937,7 +972,7 @@ long OpcUaSetupMonitors(void)
     ServiceSettings     serviceSettings;
     UaDiagnosticInfos   diagnosticInfos;
 
-    if(pMyClient->debug) errlogPrintf("OpcUaSetupMonitors Browsepath ok len = %d\n",(int)pMyClient->vUaNodeId.size());
+    if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors Browsepath ok len = %d\n",(int)pMyClient->vUaNodeId.size());
 
     if(pMyClient->getNodes() )
         return 1;
@@ -946,7 +981,7 @@ long OpcUaSetupMonitors(void)
         errlogPrintf("OpcUaSetupMonitors: READ VALUES failed with status %s\n", status.toString().toUtf8());
         return -1;
     }
-    if(pMyClient->debug) errlogPrintf("OpcUaSetupMonitors READ of %d values returned ok\n", values.length());
+    if(pMyClient->getDebug() > 1) errlogPrintf("OpcUaSetupMonitors READ of %d values returned ok\n", values.length());
     for(OpcUa_UInt32 i=0; i<values.length(); i++) {
         OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[i];
         if (OpcUa_IsBad(values[i].StatusCode)) {
@@ -956,7 +991,7 @@ long OpcUaSetupMonitors(void)
         }
         else {
             if(values[i].Value.ArrayType && !pOPCUA_ItemINFO->isArray) {
-                 errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",pOPCUA_ItemINFO->prec->name);
+                 if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",pOPCUA_ItemINFO->prec->name);
             }
             else {
 
@@ -964,7 +999,7 @@ long OpcUaSetupMonitors(void)
                 epicsMutexLock(pOPCUA_ItemINFO->flagLock);
                 pOPCUA_ItemINFO->isArray = 0;
                 epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-                if(pMyClient->debug) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
+                if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
             }
         }
     }
@@ -991,43 +1026,43 @@ long opcUa_close(int verbose)
 }
 
 /* iocShell/Client: Setup an opcUa Item for the driver*/
-long setOPCUA_Item(OPCUA_ItemINFO *h)
+void addOPCUA_Item(OPCUA_ItemINFO *h)
 {
-    long ret =  pMyClient->setOPCUA_Item(h);
-    return ret;
+    pMyClient->addOPCUA_Item(h);
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
-long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int verbose=0)
+long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int debug=0)
 {
     UaStatus status;
     // Initialize the UA Stack platform layer
     UaPlatformLayer::init();
 
     // Create instance of DevUaClient
-    pMyClient = new DevUaClient();
+    pMyClient = new DevUaClient(debug);
 
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
     pMyClient->hostName = nodeName;
     pMyClient->mode = mode;
-    pMyClient->debug = verbose;
+    pMyClient->url = g_serverUrl;
+    pMyClient->setDebug(debug);
     // Connect to OPC UA Server
-
-
-    status = pMyClient->connect(g_serverUrl);
+    status = pMyClient->connect();
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
+                     g_serverUrl.toUtf8(), connectInterval);
         return 1;
     }
     // Create subscription
     status = pMyClient->subscribe();
     if(status.isBad()) {
-        errlogPrintf("drvOpcuaSetup: Failed to subscribe on server '%s'' \n",g_serverUrl.toUtf8());
+        errlogPrintf("drvOpcuaSetup: Failed to subscribe to server '%s'\n", g_serverUrl.toUtf8());
         return 1;
     }
     return 0;
 }
+
 /* iocShell: shell functions */
 
 static const iocshArg drvOpcuaSetupArg0 = {"[URL] to server", iocshArgString};
@@ -1041,7 +1076,7 @@ void drvOpcuaSetup (const iocshArgBuf *args )
 {
     UaString g_serverUrl;
     UaString g_certificateStorePath;
-    UaString g_defaultHostname;
+    UaString g_defaultHostname("unknown_host");
     UaString g_applicationCertificate;
     UaString g_applicationPrivateKey;
     int g_mode = 0;
@@ -1052,27 +1087,28 @@ void drvOpcuaSetup (const iocshArgBuf *args )
       return;
     }
     g_serverUrl = args[0].sval;
+
     if(args[1].sval == NULL)
     {
       errlogPrintf("drvOpcuaSetup: ABORT Missing Argument \"cert path\".\n");
       return;
     }
     g_certificateStorePath = args[1].sval;
+
     if(args[2].sval == NULL)
     {
       errlogPrintf("drvOpcuaSetup: ABORT Missing Argument \"host name\".\n");
       return;
     }
 
-    UaString sNodeName("unknown_host");
     char szHostName[256];
     if (0 == UA_GetHostname(szHostName, 256))
     {
-        sNodeName = szHostName;
+        g_defaultHostname = szHostName;
     }
     else 
         if(strlen(args[2].sval) > 0)
-            sNodeName = args[2].sval;
+            g_defaultHostname = args[2].sval;
 
     g_certificateStorePath = args[1].sval;
     g_mode = args[3].ival;
@@ -1082,23 +1118,21 @@ void drvOpcuaSetup (const iocshArgBuf *args )
     }
     int verbose = args[4].ival;
 
-    signal(SIGINT, signalHandler);
-
-    g_applicationCertificate = g_certificateStorePath + "/certs/cert_client_" + g_defaultHostname + ".der";
-    g_applicationPrivateKey	 = g_certificateStorePath + "/private/private_key_client_" + g_defaultHostname + ".pem";
     if(verbose) {
         errlogPrintf("Host:\t'%s'\n",g_defaultHostname.toUtf8());
         errlogPrintf("URL:\t'%s'\n",g_serverUrl.toUtf8());
-        errlogPrintf("Set certificate path:\n\t'%s'\n",g_certificateStorePath.toUtf8());
-        errlogPrintf("Client Certificate:\n\t'%s'\n",g_applicationCertificate.toUtf8());
-        errlogPrintf("Client privat key:\n\t'%s'\n",g_applicationPrivateKey.toUtf8());
+    }
+    if(g_certificateStorePath.size() > 0) {
+        g_applicationCertificate = g_certificateStorePath + "/certs/cert_client_" + g_defaultHostname + ".der";
+        g_applicationPrivateKey	 = g_certificateStorePath + "/private/private_key_client_" + g_defaultHostname + ".pem";
+        if(verbose) {
+            errlogPrintf("Set certificate path:\n\t'%s'\n",g_certificateStorePath.toUtf8());
+            errlogPrintf("Client Certificate:\n\t'%s'\n",g_applicationCertificate.toUtf8());
+            errlogPrintf("Client privat key:\n\t'%s'\n",g_applicationPrivateKey.toUtf8());
+        }
     }
 
-    if(opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,sNodeName,(GetNodeMode)g_mode),verbose)
-    {
-        errlogPrintf("Error in opcUa_init()\n");
-        return;
-    }
+    opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,(GetNodeMode)g_mode,verbose);
 }
 extern "C" {
 epicsRegisterFunction(drvOpcuaSetup);
@@ -1110,7 +1144,7 @@ iocshFuncDef opcuaDebugFuncDef = {"opcuaDebug", 1, opcuaDebugArg};
 void opcuaDebug (const iocshArgBuf *args )
 {
     if(pMyClient)
-        pMyClient->debug = args[0].ival;
+        pMyClient->setDebug(args[0].ival);
     else
         errlogPrintf("Ignore: OpcUa not initialized\n");
     return;

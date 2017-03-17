@@ -27,17 +27,12 @@
 #include "devUaSubscription.h"
 
 DevUaSubscription::DevUaSubscription(int debug=0)
-: m_pSession(NULL),
-  m_pSubscription(NULL)
-{
-    DevUaSubscription::debug = debug;
-}
+    : debug(debug)
+{}
+
 DevUaSubscription::~DevUaSubscription()
 {
-    if ( m_pSubscription )
-    {
-        deleteSubscription();
-    }
+    deleteSubscription();
 }
 
 void DevUaSubscription::subscriptionStatusChanged(
@@ -45,8 +40,11 @@ void DevUaSubscription::subscriptionStatusChanged(
     const UaStatus&   status)
 {
     OpcUa_ReferenceParameter(clientSubscriptionHandle); // We use the callback only for this subscription
-    errlogPrintf("Subscription not longer valid - failed with status %d (%s)\n",status.statusCode(), status.toString().toUtf8());
+    errlogPrintf("DevUaSubscription: subscription no longer valid - failed with status %d (%s)\n",
+                 status.statusCode(),
+                 status.toString().toUtf8());
 }
+
 void DevUaSubscription::dataChange(
     OpcUa_UInt32               clientSubscriptionHandle,
     const UaDataNotifications& dataNotifications,
@@ -55,15 +53,19 @@ void DevUaSubscription::dataChange(
     OpcUa_ReferenceParameter(clientSubscriptionHandle); // We use the callback only for this subscription
     OpcUa_ReferenceParameter(diagnosticInfos);
     OpcUa_UInt32 i = 0;
+    char timeBuf[30];
+    getTime(timeBuf);
+    if(debug>2) errlogPrintf("dataChange\n");
     for ( i=0; i<dataNotifications.length(); i++ )
     {
         struct dataChangeError {};
         OPCUA_ItemINFO* pOPCUA_ItemINFO = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
+        if(debug>3) errlogPrintf("\t%s\n",pOPCUA_ItemINFO->prec->name);
+        epicsMutexLock(pOPCUA_ItemINFO->flagLock);
         try {
-            epicsMutexLock(pOPCUA_ItemINFO->flagLock);
             if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
             {
-                if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("  Variable %d failed with status %s\n", dataNotifications[i].ClientHandle,
+                if(debug) errlogPrintf("%s %s Variable %d failed with status %s\n",timeBuf ,pOPCUA_ItemINFO->prec->name,dataNotifications[i].ClientHandle,
                        UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8());
                 throw dataChangeError();
             }
@@ -78,7 +80,7 @@ void DevUaSubscription::dataChange(
                 UaUInt32Array aUInt32;
                 UaFloatArray  aFloat;
                 UaDoubleArray aDouble;
-                if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("dataChange %s\t Array\n", pOPCUA_ItemINFO->prec->name);
+                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\t Array\n", pOPCUA_ItemINFO->prec->name);
 
                 if(val.arraySize() <= pOPCUA_ItemINFO->arraySize) {
                     switch(pOPCUA_ItemINFO->recDataType) {
@@ -113,39 +115,39 @@ void DevUaSubscription::dataChange(
                         memcpy(pOPCUA_ItemINFO->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*pOPCUA_ItemINFO->arraySize);
                         break;
                     default:
-                        if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("%s dataChange: Can't convert data type\n",pOPCUA_ItemINFO->prec->name);
+                        if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("%s dataChange: Can't convert data type\n",pOPCUA_ItemINFO->prec->name);
                         throw dataChangeError();
                     }
                 }
                 else {
-                    errlogPrintf("dataChange %s Error Record arraysize %d < OpcItem Size %d\n", pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
+                    if(debug) errlogPrintf("%s %s dataChange Error Record arraysize %d < OpcItem Size %d\n",timeBuf, pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
                     throw dataChangeError();
                 }
             }      // end array
             else { // is no array
-                if( pOPCUA_ItemINFO->pInpVal ) { // is OUT Record
+                if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
                     if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
                         pOPCUA_ItemINFO->noOut = 1;
                         switch(pOPCUA_ItemINFO->inpDataType){ // Write direct to the records VAL field
                             case epicsInt32T:
                                 val.toInt32( *((OpcUa_Int32*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsUInt32T:
                                 val.toUInt32( *((OpcUa_UInt32*)pOPCUA_ItemINFO->pInpVal));
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsFloat64T:
                                 val.toDouble( *((epicsFloat64*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64 recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
+                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsFloat64 recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
                                 break;
                             case epicsOldStringT:
                                 strncpy((char*)pOPCUA_ItemINFO->pInpVal,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                                if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
+                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                                 break;
                         default:
-                            errlogPrintf("%s\tdataChange: unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+                            if(debug) errlogPrintf("%s\tdataChange: unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
                             throw dataChangeError();
                         }
                         callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
@@ -154,27 +156,27 @@ void DevUaSubscription::dataChange(
                         pOPCUA_ItemINFO->noOut=0;
                     }
                 }
-                else {// is IN Record
-                    if(pOPCUA_ItemINFO->debug>= 2) errlogPrintf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
+                else { // is IN Record
+                    if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
                     switch(pOPCUA_ItemINFO->recDataType){ // Write to the OPCUA_ItemINFO variant, record processing will get the value when processing
                         case epicsInt32T:
                             val.toInt32( reinterpret_cast<OpcUa_Int32&>( (pOPCUA_ItemINFO->varVal).Int32 ) );
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsInt32 opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
+                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsInt32 opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
                             break;
                         case epicsUInt32T:
                             val.toUInt32( reinterpret_cast<OpcUa_UInt32&>( (pOPCUA_ItemINFO->varVal).UInt32) );
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsUInt32 opcVal: %u\n",(pOPCUA_ItemINFO->varVal).UInt32);
+                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsUInt32 opcVal: %u\n",(pOPCUA_ItemINFO->varVal).UInt32);
                             break;
                         case epicsFloat64T:
                             val.toDouble( (pOPCUA_ItemINFO->varVal).Double);
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsFloat64 opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
+                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsFloat64 opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
                             break;
                         case epicsOldStringT:
                             strncpy((pOPCUA_ItemINFO->varVal).cString,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                            if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tepicsOldString opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
+                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsOldString opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
                             break;
                     default:
-                        errlogPrintf("%s\tdataChange: unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+                        if(debug) errlogPrintf("%s %s\tdataChange: unsupported recDataType '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
                         throw dataChangeError();
                     }
                     if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
@@ -184,19 +186,25 @@ void DevUaSubscription::dataChange(
 
                 }
             }
-
-            setTimestamp(pOPCUA_ItemINFO,UaDateTime(dataNotifications[i].Value.ServerTimestamp));
-
-            epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-            if(pOPCUA_ItemINFO->debug>= 4)
-                    errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
-                       pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
-                       pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                       pOPCUA_ItemINFO->noOut);
         }
         catch(dataChangeError) {
             pOPCUA_ItemINFO->stat = 1;
         }
+        // I'm not shure about the posibility of another exception but of the damage it could do!
+        catch(...) {
+            pOPCUA_ItemINFO->stat = 1;
+            if(debug) errlogPrintf("%s %s\tdataChange: unexpected exception '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+            pOPCUA_ItemINFO->debug = 4;
+        }
+        epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+
+        setTimestamp(pOPCUA_ItemINFO,UaDateTime(dataNotifications[i].Value.ServerTimestamp));
+
+        if(pOPCUA_ItemINFO->debug >= 4)
+                errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
+                   pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
+                   pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
+                   pOPCUA_ItemINFO->noOut);
     } //end for
     return;
 }
@@ -209,14 +217,11 @@ void setTimestamp(OPCUA_ItemINFO * pOPCUA_ItemINFO, const UaDateTime &dt)
         prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
         prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
     }
-    if(pOPCUA_ItemINFO->debug>= 4) {
+    if(pOPCUA_ItemINFO->debug >= 4) {
         char currentBuffer[30];
         char timeBuffer[30];
-        epicsTimeStamp ts;
-        epicsTimeGetCurrent(&ts);
-        epicsTimeToStrftime(currentBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&ts);
         epicsTimeToStrftime(timeBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&(prec->time));
-        if(pOPCUA_ItemINFO->debug>= 4) errlogPrintf("setTimestamp: Curr:%s TST:%d Server:%s recTIME:%s\n",currentBuffer,prec->tse,dt.toString().toUtf8(),timeBuffer);
+        if(pOPCUA_ItemINFO->debug >= 4) errlogPrintf("setTimestamp: Curr:%s TSE:%d Server:%s recTIME:%s\n",getTime(currentBuffer),prec->tse,dt.toString().toUtf8(),timeBuffer);
     }
 }
 
@@ -226,22 +231,18 @@ void DevUaSubscription::newEvents(
 {
     OpcUa_ReferenceParameter(clientSubscriptionHandle);
     OpcUa_ReferenceParameter(eventFieldList);
-    errlogPrintf("DevUaSubscription::newEvents called\n");
+    if(debug) errlogPrintf("DevUaSubscription::newEvents called\n");
 }
 
-UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
+UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
 {
-    if ( m_pSubscription )
-    {
-        errlogPrintf("\nError: Subscription already created\n");
-        return OpcUa_BadInvalidState;
-    }
     m_pSession = pSession;
+
     UaStatus result;
     ServiceSettings serviceSettings;
     SubscriptionSettings subscriptionSettings;
     subscriptionSettings.publishingInterval = 100;
-    if(debug) errlogPrintf("\nCreating subscription\n");
+    if(debug) errlogPrintf("Creating subscription\n");
     result = pSession->createSubscription(
         serviceSettings,
         this,
@@ -251,40 +252,35 @@ UaStatus DevUaSubscription::createSubscription(UaSession* pSession)
         &m_pSubscription);
     if (result.isBad())
     {
-        m_pSubscription = NULL;
-        errlogPrintf("CreateSubscription failed with status %s\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::createSubscription failed with status %#8x (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
     return result;
 }
+
 UaStatus DevUaSubscription::deleteSubscription()
 {
-    if ( m_pSubscription == NULL )
-    {
-        errlogPrintf("\nError: No Subscription created\n");
-        return OpcUa_BadInvalidState;
-    }
     UaStatus result;
     ServiceSettings serviceSettings;
     // let the SDK cleanup the resources for the existing subscription
+    if(debug) errlogPrintf("Deleting subscription\n");
     result = m_pSession->deleteSubscription(
         serviceSettings,
         &m_pSubscription);
     if (result.isBad())
     {
-        errlogPrintf("DevUaSubscription::deleteSubscription failed with status '%s'\n", result.toString().toUtf8());
+        errlogPrintf("DevUaSubscription::deleteSubscription failed with status %#8x (%s)\n",
+                     result.statusCode(),
+                     result.toString().toUtf8());
     }
-    m_pSubscription = NULL;
+    //TODO: setting the pointer NULL if delete failed might be a memory leak?
     return result;
 }
 
 UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *uaItemInfo)
 {
-    if(debug) errlogPrintf("DevUaSubscription::createMonitoredItems DevUaSubscription::createMonitoredItems\n");
-    if ( m_pSubscription == NULL )
-    {
-        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: missing subscription\n");
-        return OpcUa_BadInvalidState;
-    }
+    if(debug) errlogPrintf("DevUaSubscription::createMonitoredItems\n");
     if( uaItemInfo->size() == vUaNodeId.size())
         m_vectorUaItemInfo = uaItemInfo;
     else
@@ -334,12 +330,12 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
         {
             if (OpcUa_IsGood(createResults[i].StatusCode))
             {
-                if(debug) errlogPrintf("CreateMonitoredItems succeeded for item: %s\n",
+                if(debug>1) errlogPrintf("%4d: %s\n",i,
                     UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8());
             }
             else
             {
-                errlogPrintf("DevUaSubscription::createMonitoredItems failed for item: %s - Status %s\n",
+                if(debug) errlogPrintf("%4d DevUaSubscription::createMonitoredItems failed for node: %s - Status %s\n",i,
                     UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8(),
                     UaStatus(createResults[i].StatusCode).toString().toUtf8());
             }
@@ -347,8 +343,7 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     }
     else
     {
-        errlogPrintf("DevUaSubscription::createMonitoredItems service call failed with status %s\n", result.toString().toUtf8());
+       if(debug)  errlogPrintf("DevUaSubscription::createMonitoredItems service call failed with status %s\n", result.toString().toUtf8());
     }
     return result;
 }
-

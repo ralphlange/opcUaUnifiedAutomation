@@ -3,35 +3,28 @@ include $(TOP)/configure/CONFIG
 #----------------------------------------
 #  ADD MACRO DEFINITIONS AFTER THIS LINE
 
-#------------------------generic definitions----------------------#
-
-CROSS_COMPILER_TARGET_ARCHS=
-
-STATIC_BUILD = NO
-
 PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
-opcUaClient_DIR = $(UASDK)/lib
-opcUaClient_LIBS += opcUa
-opcUaClient_LIBS += $(EPICS_BASE_IOC_LIBS)
-opcUaClient_LIBS += uastack
-opcUaClient_LIBS += uaclient
-opcUaClient_LIBS += uapki
-opcUaClient_LIBS += uabase
-opcUaClient_LIBS += xmlparser
+PROD_LIBS += opcUa
+PROD_LIBS += $(UASDK_LIBS)
+PROD_LIBS += $(EPICS_BASE_IOC_LIBS)
 
-USR_INCLUDES += -I$(UASDK)/include/uabase
-USR_INCLUDES += -I$(UASDK)/include/uaclient
-USR_INCLUDES += -I$(UASDK)/include/uapki
-USR_INCLUDES += -I$(UASDK)/include/uastack
-USR_INCLUDES += -I$(UASDK)/include/xmlparser
-USR_INCLUDES_WIN32 += -I$(GETOPT)/
+ifeq ($(UASDK_USE_XMLPARSER),YES)
+PROD_SYS_LIBS += xml2
+endif
 
-# set rpath than the libraries can be found at your install location
-# check path with: 'readelf -d ../bin/linux-x86_64/opcUcClient'
-#
-#USR_LDFLAGS += '-Wl,-rpath,/home/kuner/tmp/testUa'
+ifeq ($(UASDK_USE_CRYPTO),YES)
+PROD_SYS_LIBS += crypto
+endif
+
+
+ifeq ($(UASDK_DEPLOY_MODE),PROVIDED)
+define UA_template
+  $(1)_DIR = $(UASDK_DIR)
+endef
+$(foreach lib, $(UASDK_LIBS), $(eval $(call UA_template,$(lib))))
+endif
 
 PROD_SYS_LIBS_WIN32 = ws2_32 advapi32 user32 ssleay32 libeay32 crypt32 libxml2 ole32 oleaut32 strmiids
 
