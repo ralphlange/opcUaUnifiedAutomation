@@ -126,6 +126,10 @@ void DevUaSubscription::dataChange(
                     if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s dataChange Error Record arraysize %d < OpcItem Size %d\n",timeBuf, pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
                     throw dataChangeError();
                 }
+                if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
+                {
+                    scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
+                }
             }      // end array
             else { // is no array
                 if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
