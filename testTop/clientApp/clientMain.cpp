@@ -32,6 +32,12 @@
 #include"epicsMutex.h"
 #include "drvOpcUa.h"
 
+#ifdef _WIN32
+    #include <windows.h>
+    #include "getopt.h"
+#endif
+
+
 UaString g_startNode;
 UaString g_serverUrl;
 UaString g_certificateStorePath;
@@ -218,7 +224,11 @@ int main(int argc, char* argv[], char *envp[])
         if( OpcReadValues(verbose,monitored))
             printf("Error in OpcReadValues\n");
         while(monitored){
+#ifdef _WIN32
+            Sleep(1);
+#else
             sleep(1);
+#endif
         }
     }
     result = opcUa_close(verbose);

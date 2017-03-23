@@ -1,0 +1,4 @@
+UASDK = C:\progra~2\UnifiedAutomation\UaSdkCppBundleEval
+BOOST = C:/Users/csm9057/Documents/opcua/boost_1_63_0
+GETOPT = C:\Users\csm9057\Documents\opcua\wingetopt-master\wingetopt-master\src
+CROSS_COMPILER_TARGET_ARCHS =

@@ -13,6 +13,8 @@ UASDK_LIBS = uabase uaclient uapki uastack xmlparser
 
 USR_INCLUDES += $(foreach module, $(UASDK_LIBS), -I$(UASDK)/include/$(module))
 
+USR_INCLUDES_WIN32 += -I$(BOOST)
+
 ifeq ($(UASDK_DEPLOY_MODE),SYSTEM)
 USR_SYS_LIBS += $(UASDK_LIBS)
 endif

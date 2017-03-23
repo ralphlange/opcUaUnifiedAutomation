@@ -60,7 +60,11 @@
 #include <devOpcUa.h>
 #include <drvOpcUa.h>
 
+#ifdef _WIN32
+__inline int debug_level(dbCommon *prec) {
+#else
 inline int debug_level(dbCommon *prec) {
+#endif
     if(prec->dpvt)
         return ((OPCUA_ItemINFO *) prec->dpvt)->debug;
     else
@@ -279,10 +283,13 @@ long init_longin (struct longinRecord* prec)
 
 long read_longin (struct longinRecord* prec)
 {
+    OPCUA_ItemINFO* pOPCUA_ItemINFO = NULL;
+    long ret;
+
     if(DEBUG_LEVEL >= 2) errlogPrintf("read_longin\t%s\n",prec->name);
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-    long ret = read((dbCommon*)prec);
+    ret = read((dbCommon*)prec);
     if (!ret) {
         prec->val = (pOPCUA_ItemINFO->varVal).Int32;
     }
@@ -317,9 +324,11 @@ long init_mbbiDirect (struct mbbiDirectRecord* prec)
 
 long read_mbbiDirect (struct mbbiDirectRecord* prec)
 {
+    OPCUA_ItemINFO* pOPCUA_ItemINFO = NULL;
+    long ret;
     if(DEBUG_LEVEL >= 2) errlogPrintf("read mbbiDirect %s\n",prec->name);
-    long ret = read((dbCommon*)prec);
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    ret = read((dbCommon*)prec);
+    pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32 & prec->mask;
@@ -357,8 +366,10 @@ long init_mbbi (struct mbbiRecord* prec)
 long read_mbbi (struct mbbiRecord* prec)
 {
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    long ret;
+
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-    long ret = read((dbCommon*)prec);
+    ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32 & prec->mask;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbi %s VAL:%d RVAL:%d\n",prec->name,prec->val,prec->rval);
@@ -466,9 +477,10 @@ long init_ai (struct aiRecord* prec)
 long read_ai (struct aiRecord* prec)
 {
     double newVal;
+    long ret;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*) prec->dpvt;
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-    long ret = read((dbCommon*)prec);
+    ret = read((dbCommon*)prec);
     if (!ret) {
         if(prec->linr == menuConvertNO_CONVERSION) {
             newVal = (pOPCUA_ItemINFO->varVal).Double;
@@ -531,6 +543,7 @@ long write_stringout (struct stringoutRecord* prec)
 long init_waveformRecord(struct waveformRecord* prec) {
     long ret = 0;
     int recType=0;
+    OPCUA_ItemINFO* pOpcUa2Epics=NULL;
     prec->dpvt = NULL;
     switch(prec->ftvl) {
         case menuFtypeSTRING: recType = epicsOldStringT; break;
@@ -545,7 +558,7 @@ long init_waveformRecord(struct waveformRecord* prec) {
         case menuFtypeENUM  : recType = epicsEnum16T; break;
     }
     ret = init_common((dbCommon*)prec,&(prec->inp),recType,(void*)prec->bptr,0,NULL);
-    OPCUA_ItemINFO* pOpcUa2Epics = (OPCUA_ItemINFO*)prec->dpvt;
+    pOpcUa2Epics = (OPCUA_ItemINFO*)prec->dpvt;
     if(pOpcUa2Epics != NULL) {
         pOpcUa2Epics->isArray = 1;
         pOpcUa2Epics->arraySize = prec->nelm;
@@ -591,9 +604,9 @@ static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
 
 /* Setup commons for all record types: debug level, noOut, alarms. Don't deal with the value! */
 static long read(dbCommon * prec) {
+    long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
-    long ret = 0;
 
     if(DEBUG_LEVEL >= 3)
         errlogPrintf("read %s\t UDF=%i noOut:=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
@@ -622,10 +635,10 @@ static long read(dbCommon * prec) {
 }
 
 static long write(dbCommon *prec) {
+	long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
-    long ret = 0;
-
+    
     if(DEBUG_LEVEL >= 3)
         errlogPrintf("write %s\t UDF:%i, noOut=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
 
