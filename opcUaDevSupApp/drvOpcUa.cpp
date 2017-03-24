@@ -307,7 +307,7 @@ void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
 {
     vUaItemInfo.push_back(h);
     h->itemIdx = vUaItemInfo.size()-1;
-    if(h->debug >= 3)
+    if(h->debug >= 4)
         errlogPrintf("%s\tDevUaClient::addOPCUA_ItemINFO: idx=%d\n", h->prec->name, h->itemIdx);
 }
 void DevUaClient::setDebug(int d)
@@ -395,7 +395,7 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
     OpcUa_UInt32            itemCount=vUaItemInfo.size();
     std::string             partPath;
 
-    if(debug)   errlogPrintf("DevUaClient::getAllNodesFromBrowsePath()");
+    if(debug)   errlogPrintf("getAllNodesFromBrowsePath()\n");
     if(debug>1) {errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++) errlogPrintf("%4d %s '%s'\n",bpItem,(vUaItemInfo[bpItem])->prec->name,(vUaItemInfo[bpItem])->ItemPath);}
     browsePaths.create(itemCount);
     for(bpItem=0;bpItem<itemCount;bpItem++) {
@@ -415,8 +415,6 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
         browsePaths[bpItem].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
         pathElements.create(lenPath);
         for(int i=0; i<lenPath;i++){
-            //if(debug>1) errlogPrintf("%s|",devpath[i].c_str());
-
             pathElements[i].IncludeSubtypes = OpcUa_True;
             pathElements[i].IsInverse       = OpcUa_False;
             pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
@@ -431,7 +429,6 @@ UaStatus DevUaClient::getAllNodesFromBrowsePath()
         }
         browsePaths[bpItem].RelativePath.NoOfElements = pathElements.length();
         browsePaths[bpItem].RelativePath.Elements = pathElements.detach();
-        if(debug>1) errlogPrintf("\n");
     }
 
 
@@ -463,13 +460,14 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     char            ItemPath[ITEMPATHLEN];
     char            *endptr;
 
-    if(debug>1) errlogPrintf("DevUaClient::getNodeFromBrowsePath\n");
+    if(debug>1) errlogPrintf("getNodeFromBrowsePath\n");
     pOPCUA_ItemINFO = vUaItemInfo[bpItem];
  
-    // Syntax:
-    // <namespace index>:<browsepath>
+    // Syntax: <namespace index>:<browsepath>
     NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
-    if (*endptr++ != ':') return 1;
+
+    if (*endptr++ != ':')
+        return 1;           // is not a path
     strncpy(ItemPath, endptr, ITEMPATHLEN);
     ItemPath[ITEMPATHLEN-1] = '\0';
 
@@ -503,7 +501,6 @@ long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
     }
     browsePaths[0].RelativePath.NoOfElements = pathElements.length();
     browsePaths[0].RelativePath.Elements = pathElements.detach();
-    if(debug>1) errlogPrintf("\n");
 
     status = m_pSession->translateBrowsePathsToNodeIds(
         serviceSettings, // Use default settings
@@ -544,10 +541,10 @@ long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
     nodeToRead.create(1);
     pOPCUA_ItemINFO = vUaItemInfo[bpItem];
 
-    // Syntax:
-    // <namespace index>,<identifier>
+    // Syntax: <namespace index>,<identifier>
     NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
-    if (*endptr++ != ',') return 1;
+    if (*endptr++ != ',')
+        return 1;           // is not a Id
     strncpy(ItemId, endptr, ITEMPATHLEN);
     ItemId[ITEMPATHLEN-1] = '\0';
 
@@ -558,13 +555,14 @@ long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
     else                 // string id
         tempNode.setNodeId(UaString(ItemId), NsIdx);
 
-    if(debug>2) errlogPrintf("SETUP NODE: '%s' Item num:%d str:'%s'\n",tempNode.toString().toUtf8(),itemId,ItemId);
+    if(debug>2) errlogPrintf("getNodeFromId NODE: '%s'\n",tempNode.toString().toUtf8());
     nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
     tempNode.copyTo(&(nodeToRead[0].NodeId)) ;
 
     status = m_pSession->read(serviceSettings,0,OpcUa_TimestampsToReturn_Both,nodeToRead,values,diagnosticInfos);
     if(status.isBad()){
         vUaNodeId.push_back(UaNodeId());
+        if(debug>2) errlogPrintf("\tfailed to get node\n");
         return 1;
     }
     else {
@@ -578,7 +576,6 @@ long DevUaClient::getAllNodesFromId()
     OpcUa_UInt32        nrOfItems;
 
     nrOfItems = vUaItemInfo.size();
-    if(debug) errlogPrintf("DevUaClient::getAllNodesFromId()\n");
     for(OpcUa_UInt32 i=0; i<nrOfItems; i++) {
         ignore_result( getNodeFromId(i) );
     }
@@ -589,9 +586,9 @@ long DevUaClient::getAllNodesFromId()
 // clear vUaNodeId and recreate all nodes
 long DevUaClient::getNodes()
 {
-    UaStatus status;
-    int ret=0;
-    OpcUa_UInt32            itemCount=vUaItemInfo.size();
+    UaStatus    status;
+    int         ret=0;
+    OpcUa_UInt32 itemCount=vUaItemInfo.size();
     vUaNodeId.clear();
     if(false == m_pSession->isConnected() ) {
          errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected - deferring initialisation\n");
@@ -659,8 +656,7 @@ void DevUaClient::writeComplete( OpcUa_UInt32 transactionId,const UaStatus& resu
     if(result.isBad() && debug) {
         errlogPrintf("Bad Write Result: ");
         for(unsigned int i=0;i<results.length();i++) {
-            errlogPrintf("%s ",result.isBad()? result.toString().toUtf8():"ok");
-            errlogPrintf("\n");
+            errlogPrintf("%s \n",result.isBad()? result.toString().toUtf8():"ok");
     }
 }
 }
@@ -739,8 +735,9 @@ void print_OpcUa_DataValue(_OpcUa_DataValue *d)
 
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo)
 {
+    int i;
     if(val.isArray()) {
-        for(OpcUa_UInt32 i=0;i<val.arraySize();i++) {
+        for(i=0;i<val.arraySize();i++) {
             if(UaVariant(val[i]).type() < OpcUaType_String)
                 errlogPrintf("%s[%d] %s\n",pMyClient->vUaItemInfo[IdxUaItemInfo]->ItemPath,i,UaVariant(val[i]).toString().toUtf8());
             else

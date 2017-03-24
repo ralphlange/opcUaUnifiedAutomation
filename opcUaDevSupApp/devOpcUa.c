@@ -65,10 +65,7 @@ __inline int debug_level(dbCommon *prec) {
 #else
 inline int debug_level(dbCommon *prec) {
 #endif
-    if(prec->dpvt)
-        return ((OPCUA_ItemINFO *) prec->dpvt)->debug;
-    else
-        return 0;
+        return prec->tpro;
 }
 
 #define DEBUG_LEVEL debug_level((dbCommon*)prec)
@@ -268,7 +265,6 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     else {
         scanIoInit(&(pOPCUA_ItemINFO->ioscanpvt));
     }
-    //  errlogPrintf("init_common %s\t pOPCUA_ItemINFO=%p\n",prec->name,pOPCUA_ItemINFO);
     return 0;
 }
 
@@ -277,110 +273,116 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
  **************************************************************************-*/
 long init_longin (struct longinRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("init_longin %s\n",prec->name);
     return init_common((dbCommon*)prec,&(prec->inp),epicsInt32T,(void*)&(prec->val),0,NULL);
 }
 
 long read_longin (struct longinRecord* prec)
 {
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = NULL;
-    long ret;
-
-    if(DEBUG_LEVEL >= 2) errlogPrintf("read_longin\t%s\n",prec->name);
-    pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    char buf[256];
+    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+    int ret;
+    
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     ret = read((dbCommon*)prec);
     if (!ret) {
         prec->val = (pOPCUA_ItemINFO->varVal).Int32;
+        if(DEBUG_LEVEL >= 2) errlogPrintf("read_longin     %s %s %d\n",prec->name,getTime(buf),prec->val);
+        if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     }
     epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
     return ret;
 }
 
 /***************************************************************************
-    	    	    	    	Longout Support
+                                Longout Support
  ***************************************************************************/
 long init_longout( struct longoutRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("init_longout %s\n",prec->name);
     return init_common((dbCommon*)prec,&(prec->out),epicsInt32T,(void*)&(prec->val),epicsInt32T,(void*)&(prec->val));
 }
 
 long write_longout (struct longoutRecord* prec)
 {
-    if(DEBUG_LEVEL >= 3) errlogPrintf("write_longout %s\t VAL %d\n",prec->name,prec->val);
+    char buf[256];
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_longout   %s %s RVAL:%d\n",prec->name,getTime(buf),prec->val);
     return write((dbCommon*)prec);
 }
 
 /*+**************************************************************************
-    	    	    	    	MbbiDirect Support
+                                MbbiDirect Support
  **************************************************************************-*/
 long init_mbbiDirect (struct mbbiDirectRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("init_mbbiDirect %s\n",prec->name);
     prec->mask <<= prec->shft;
     return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),0,NULL);
 }
 
 long read_mbbiDirect (struct mbbiDirectRecord* prec)
 {
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = NULL;
+    char buf[256];
+    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     long ret;
-    if(DEBUG_LEVEL >= 2) errlogPrintf("read mbbiDirect %s\n",prec->name);
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+
     ret = read((dbCommon*)prec);
-    pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32 & prec->mask;
-        if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbiDirect %s VAL:%d RVAL:%d\n",prec->name,prec->val,prec->rval);
+        if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbiDirect %s %s VAL:%d RVAL:%d\n",prec->name,getTime(buf),prec->val,prec->rval);
+        if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     }
     epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
     return ret;
 }
 
 /***************************************************************************
-    	    	    	    	mbboDirect Support
+                                mbboDirect Support
  ***************************************************************************/
 long init_mbboDirect( struct mbboDirectRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("init_mbboDirect %s\n",prec->name);
     return init_common((dbCommon*)prec,&(prec->out),epicsUInt32T,(void*)&(prec->rval),epicsUInt32T,(void*)&(prec->val));
 }
 
 long write_mbboDirect (struct mbboDirectRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbboDirect %s\n",prec->name);
+    char buf[256];
     prec->rval = prec->rval & prec->mask;
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbboDirect %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
     return write((dbCommon*)prec);
 }
 /*+**************************************************************************
-    	    	    	    	Mbbi Support
+                                Mbbi Support
  **************************************************************************-*/
 long init_mbbi (struct mbbiRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("init_mbbi %s\n",prec->name);
     prec->mask <<= prec->shft;
     return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),0,NULL);
 }
 
 long read_mbbi (struct mbbiRecord* prec)
 {
+    char buf[256];
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     long ret;
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
 
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32 & prec->mask;
-        if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbi %s VAL:%d RVAL:%d\n",prec->name,prec->val,prec->rval);
+        if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbi %s %s VAL:%d RVAL:%d\n",prec->name,getTime(buf),prec->val,prec->rval);
+        if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     }
     epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-    if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbi %s return %li:\n",prec->name,ret);
     return ret;
 }
 
 /***************************************************************************
-    	    	    	    	mbbo Support
+                                mbbo Support
  ***************************************************************************/
 long init_mbbo( struct mbboRecord* prec)
 {
@@ -390,12 +392,14 @@ long init_mbbo( struct mbboRecord* prec)
 
 long write_mbbo (struct mbboRecord* prec)
 {
+    char buf[256];
     prec->rval = prec->rval & prec->mask;
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbbo      %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
     return write((dbCommon*)prec);
 }
 
 /*+**************************************************************************
-    	    	    	    	Bi Support
+                                Bi Support
  **************************************************************************-*/
 long init_bi (struct biRecord* prec)
 {
@@ -404,20 +408,25 @@ long init_bi (struct biRecord* prec)
 
 long read_bi (struct biRecord* prec)
 {
+    char buf[256];
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    //epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+
+    epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32;
-        if(DEBUG_LEVEL >= 4) errlogPrintf("%s\tread_bi\n",prec->name);
+        if(DEBUG_LEVEL >= 2) errlogPrintf("read_bi         %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
+        if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     }
-    //epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+    epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
     return ret;
 }
 
 
 /***************************************************************************
-    	    	    	    	bo Support
+                                bo Support
  ***************************************************************************/
 long init_bo( struct boRecord* prec)
 {
@@ -427,12 +436,13 @@ long init_bo( struct boRecord* prec)
 
 long write_bo (struct boRecord* prec)
 {
-    if(DEBUG_LEVEL >= 2) errlogPrintf("%s\twrite_bo\n",prec->name);
+    char buf[256];
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_bo        %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
     return write((dbCommon*)prec);
 }
 
 /*+**************************************************************************
-    	    	    	    	ao Support
+                                ao Support
  **************************************************************************-*/
 long init_ao (struct aoRecord* prec)
 {
@@ -441,7 +451,7 @@ long init_ao (struct aoRecord* prec)
         ret = init_common((dbCommon*)prec,&(prec->out),epicsFloat64T,(void*)&(prec->oval),epicsFloat64T,(void*)&(prec->val));
     else
         ret = init_common((dbCommon*)prec,&(prec->out),epicsInt32T,(void*)&(prec->rval),epicsFloat64T,(void*)&(prec->val));
-    if(DEBUG_LEVEL >= 3) {
+    if(DEBUG_LEVEL >= 2) {
         OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
         errlogPrintf("init_ao %s\t VAL %f RVAL %d OPCVal %f\n",prec->name,prec->val,prec->rval,(pOPCUA_ItemINFO->varVal).Double);
     }
@@ -450,14 +460,15 @@ long init_ao (struct aoRecord* prec)
 
 long write_ao (struct aoRecord* prec)
 {
-    if(DEBUG_LEVEL >= 3) {
+    char buf[256];
+    if(DEBUG_LEVEL >= 2) {
         OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-        errlogPrintf("write_ao %s\t VAL %f RVAL %d OPCVal %f\n",prec->name,prec->val,prec->rval,(pOPCUA_ItemINFO->varVal).Double);
+        errlogPrintf("write_ao %s %s VAL %f RVAL %d OPCVal %f\n",prec->name,getTime(buf),prec->val,prec->rval,(pOPCUA_ItemINFO->varVal).Double);
     }
     return write((dbCommon*)prec);
 }
 /***************************************************************************
-    	    	    	    	ai Support
+                                ai Support
  **************************************************************************
   In case of LINR == NO_CONVERSION: read() set the VAL field direct and perform
   NO conversion. This is to avoid loss of data for double values from the OPC
@@ -476,9 +487,13 @@ long init_ai (struct aiRecord* prec)
 
 long read_ai (struct aiRecord* prec)
 {
+    char buf[256];
     double newVal;
     long ret;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*) prec->dpvt;
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     ret = read((dbCommon*)prec);
     if (!ret) {
@@ -491,12 +506,14 @@ long read_ai (struct aiRecord* prec)
             else {
                 prec->val = newVal;
             }
-            if(DEBUG_LEVEL>= 3) errlogPrintf("read_ai %s\tbuffer: %f VAL:%f ret: 2 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,newVal,prec->val,prec->linr,&(prec->val),&(prec->rval));
+            if(DEBUG_LEVEL>= 2) errlogPrintf("read_ai         %s %s\n\tbuf:%f VAL:%f\n", prec->name,getTime(buf),newVal,prec->val);
+            if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d  ret: 2 NO_CONVERSION\n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
             ret = 2;
         }
         else {
             prec->rval = (pOPCUA_ItemINFO->varVal).Int32;
-            if(DEBUG_LEVEL>= 3) errlogPrintf("read_ai %s\tbuffer: %d RVAL:%d VAL%f ret: 0 LINR=%d &VAL=%p &RVAL=%p\n", prec->name,(pOPCUA_ItemINFO->varVal).Int32,prec->rval,prec->val,prec->linr,&(prec->val),&(prec->rval));
+            if(DEBUG_LEVEL >= 2) errlogPrintf("read_ai         %s %s\n\tbuf:%f RVAL:%d\n", prec->name,getTime(buf),(pOPCUA_ItemINFO->varVal).Double,prec->rval);
+            if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d ret: 0 LINR=%d\n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf,prec->linr);
         }
     }
     epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
@@ -504,7 +521,7 @@ long read_ai (struct aiRecord* prec)
 }
 
 /***************************************************************************
-    	    	    	    	Stringin Support
+                                Stringin Support
  **************************************************************************-*/
 long init_stringin (struct stringinRecord* prec)
 {
@@ -513,19 +530,24 @@ long init_stringin (struct stringinRecord* prec)
 
 long read_stringin (struct stringinRecord* prec)
 {
+    char buf[256];
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    //epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+    epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     long ret = read((dbCommon*)prec);
     if( !ret ) {
         strncpy(prec->val,(pOPCUA_ItemINFO->varVal).cString,40);    // string length: see stringin.h
         prec->udf = FALSE;	// stringinRecord process doesn't set udf field in case of no convert!
     }
-    //epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+    epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_stringin  %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tnoOut %d->%d, UDF %d->%d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     return ret;
 }
 
 /***************************************************************************
-    	    	    	    	Stringout Support
+                                Stringout Support
  ***************************************************************************/
 long init_stringout( struct stringoutRecord* prec)
 {
@@ -534,6 +556,8 @@ long init_stringout( struct stringoutRecord* prec)
 
 long write_stringout (struct stringoutRecord* prec)
 {
+    char buf[256];
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_stringout %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
     return write((dbCommon*)prec);
 }
 
@@ -566,27 +590,34 @@ long init_waveformRecord(struct waveformRecord* prec) {
     return  ret;
 }
 
-long read_wf(struct waveformRecord *prec) {
+long read_wf(struct waveformRecord *prec)
+{
+    char buf[256];
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    //epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+    pOPCUA_ItemINFO->debug = prec->tpro;
+    int noOut = pOPCUA_ItemINFO->noOut;
+    int udf   = prec->udf;
+
+    epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     int ret = read((dbCommon*)prec);
     if(! ret) {
         prec->nord = pOPCUA_ItemINFO->arraySize;
         pOPCUA_ItemINFO->arraySize = prec->nelm;
         prec->udf=FALSE;
     }
-    //epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+    epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+    if(DEBUG_LEVEL >= 2) errlogPrintf("read_wf         %s %s NELM:%d\n",prec->name,getTime(buf),prec->nelm);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\t  noOut %d -> %d, UDF%d -> %d \n",noOut,pOPCUA_ItemINFO->noOut,udf,prec->udf);
     return ret;
 }
 
-
 /* callback service routine */
 static void outRecordCallback(CALLBACK *pcallback) {
-    dbCommon *prec;  
+    char buf[256];
+    dbCommon *prec;
     callbackGetUser(prec, pcallback);
     if(prec) {
-        if(DEBUG_LEVEL >= 2)
-            errlogPrintf("callb: %s\tdbProcess\n", prec->name);
+        if(DEBUG_LEVEL >= 2) errlogPrintf("outRecordCallback: %s %s\tdbProcess\n", prec->name,getTime(buf));
         dbProcess(prec);
     }
 }
@@ -596,8 +627,7 @@ static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
     if(!prec || !prec->dpvt)
         return 1;
     *ppvt = pOPCUA_ItemINFO->ioscanpvt;
-    if(DEBUG_LEVEL >= 2)
-        errlogPrintf("get_ioint_info %s %s I/O event list - ioscanpvt=%p\n",
+    if(DEBUG_LEVEL >= 2) errlogPrintf("get_ioint_info %s %s I/O event list - ioscanpvt=%p\n",
                      prec->name, cmd?"removed from":"added to", *ppvt);
     return 0;
 }
@@ -606,20 +636,15 @@ static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
 static long read(dbCommon * prec) {
     long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    pOPCUA_ItemINFO->debug = prec->tpro;
-
-    if(DEBUG_LEVEL >= 3)
-        errlogPrintf("read %s\t UDF=%i noOut:=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
     if(!pOPCUA_ItemINFO) {
-        errlogPrintf("read %s\terror pOPCUA_ItemINFO = 0\n", prec->name);
+        errlogPrintf("%s read error pOPCUA_ItemINFO = 0\n", prec->name);
         ret = 1;
     }
-    else {
-//        epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-        if(pOPCUA_ItemINFO->noOut == 1) {      // processed after callback just clear flag SCAN=I/O Intr.
-            pOPCUA_ItemINFO->noOut = 0;
-        }
-//        epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+
+    pOPCUA_ItemINFO->debug = prec->tpro;
+
+    if(pOPCUA_ItemINFO->noOut == 1) {      // SCAN=I/O Intr: processed after callback just clear flag.
+        pOPCUA_ItemINFO->noOut = 0;
     }
 
     ret = pOPCUA_ItemINFO->stat;
@@ -629,22 +654,18 @@ static long read(dbCommon * prec) {
     else {
         prec->udf=FALSE;
     }
-    if(DEBUG_LEVEL >= 3)
-        errlogPrintf("read %s\t noOut:%d ret: %d\n",prec->name,pOPCUA_ItemINFO->noOut,(int)ret);
     return ret;
 }
 
 static long write(dbCommon *prec) {
-	long ret = 0;
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     pOPCUA_ItemINFO->debug = prec->tpro;
-    
-    if(DEBUG_LEVEL >= 3)
-        errlogPrintf("write %s\t UDF:%i, noOut=%i\n",prec->name,prec->udf,pOPCUA_ItemINFO->noOut);
+    long ret = 0;
+
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\twrite()            UDF:%i, noOut=%i\n",prec->udf,pOPCUA_ItemINFO->noOut);
 
     if(!pOPCUA_ItemINFO) {
-        if(DEBUG_LEVEL > 0)
-            errlogPrintf("write %s\t error\n", prec->name);
+        if(DEBUG_LEVEL > 0) errlogPrintf("\twrite %s\t error\n", prec->name);
         ret = -1;
     }
     else {
@@ -659,7 +680,7 @@ static long write(dbCommon *prec) {
             ret = OpcUaWriteItems(pOPCUA_ItemINFO);
         }
     }
-    if(DEBUG_LEVEL >= 3) errlogPrintf("write %s\t set noOut=%i\n",prec->name,pOPCUA_ItemINFO->noOut);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tOpcUaWriteItems() Done set noOut=%i\n",pOPCUA_ItemINFO->noOut);
 
     if(ret==0) {
         prec->udf=FALSE;
