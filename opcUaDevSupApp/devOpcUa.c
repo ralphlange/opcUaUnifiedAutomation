@@ -195,7 +195,7 @@ epicsExportAddress(dset,devwaveformOpcUa);
 static void opcuaMonitorControl (initHookState state)
 {
     switch (state) {
-    case initHookAfterDatabaseRunning:
+    case initHookAfterFinishDevSup:
         OpcUaSetupMonitors();
         break;
     default:
