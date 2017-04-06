@@ -412,9 +412,9 @@ long read_bi (struct biRecord* prec)
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     int noOut = pOPCUA_ItemINFO->noOut;
     int udf   = prec->udf;
-
+	long ret = read((dbCommon*)prec);
+	
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-    long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (pOPCUA_ItemINFO->varVal).UInt32;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_bi         %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
@@ -534,8 +534,8 @@ long read_stringin (struct stringinRecord* prec)
     OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
     int noOut = pOPCUA_ItemINFO->noOut;
     int udf   = prec->udf;
-    epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     long ret = read((dbCommon*)prec);
+	epicsMutexLock(pOPCUA_ItemINFO->flagLock);
     if( !ret ) {
         strncpy(prec->val,(pOPCUA_ItemINFO->varVal).cString,40);    // string length: see stringin.h
         prec->udf = FALSE;	// stringinRecord process doesn't set udf field in case of no convert!
@@ -593,13 +593,14 @@ long init_waveformRecord(struct waveformRecord* prec) {
 long read_wf(struct waveformRecord *prec)
 {
     char buf[256];
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    pOPCUA_ItemINFO->debug = prec->tpro;
-    int noOut = pOPCUA_ItemINFO->noOut;
     int udf   = prec->udf;
-
+	int ret = read((dbCommon*)prec);
+	OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+	int noOut = pOPCUA_ItemINFO->noOut;
+    pOPCUA_ItemINFO->debug = prec->tpro;
+    
     epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-    int ret = read((dbCommon*)prec);
+    
     if(! ret) {
         prec->nord = pOPCUA_ItemINFO->arraySize;
         pOPCUA_ItemINFO->arraySize = prec->nelm;
@@ -658,10 +659,10 @@ static long read(dbCommon * prec) {
 }
 
 static long write(dbCommon *prec) {
-    OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
-    pOPCUA_ItemINFO->debug = prec->tpro;
     long ret = 0;
-
+	OPCUA_ItemINFO* pOPCUA_ItemINFO = (OPCUA_ItemINFO*)prec->dpvt;
+    pOPCUA_ItemINFO->debug = prec->tpro;
+    
     if(DEBUG_LEVEL >= 3) errlogPrintf("\twrite()            UDF:%i, noOut=%i\n",prec->udf,pOPCUA_ItemINFO->noOut);
 
     if(!pOPCUA_ItemINFO) {

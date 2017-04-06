@@ -735,7 +735,7 @@ void print_OpcUa_DataValue(_OpcUa_DataValue *d)
 
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo)
 {
-    int i;
+    OpcUa_UInt32 i;
     if(val.isArray()) {
         for(i=0;i<val.arraySize();i++) {
             if(UaVariant(val[i]).type() < OpcUaType_String)
