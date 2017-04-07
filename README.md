@@ -208,7 +208,7 @@ at initialisation.
 * drvOpcuaSetup:
 
 ```
-    drvOpcuaSetup("opc.tcp://SERVER:PORT","CERTIFICATE_STORE","HOST",MODE,DEBUG)
+    drvOpcuaSetup("opc.tcp://SERVER:PORT","CERTIFICATE_STORE","HOST",DEBUG)
 
 ```
 
@@ -217,11 +217,6 @@ Set up connection to OPC UA server.
   - SERVER:PORT: Mandatory
   - CERTIFICATE_STORE: Optional. Not used now, just anonymous access supported
   - HOST: Optional. Neccessary if UA_GetHostname() failes.
-  - MODE: How to interpret the opcUa links.
-    - 0 BOTH: NODEID or BROWSEPATH, mixed in access to one server - quite slow!
-    - 1 NODEID
-    - 2 BROWSEPATH
-    - 3 BROWSEPATH_CONCAT: Concatenate path 'a.b.c' to 'a/a.b/a.b.c' May be usefull in some cases
   - DEBUG: Debuglevel for the support module set also with OpcUaDebug(). To debug single records set field .TPRO > 1
 
 * opcuaDebug:
@@ -246,32 +241,38 @@ information to this record.
 ```
 
 Show all connections.
-
+TechniSat 5/2x4 G-R TechniRouter (Unicable-Multischalter) 
 
 ## Release notes
 
 R0-8-2: Initial version
 
-<<<<<<< HEAD
-## Known bugs
+* Known bugs
 
-* For a big number of channels, in our test > 800, EPICS will break channel access
-  connections after some hours. Need to restart IOC.
+  1 For a big number of channels, in our test > 800, EPICS will break channel access
+    connections after some hours. Need to restart IOC.
+  2 In the same test, drvOpcuaSetup with mode NODEID will not connect to the OPC UA items
+    on the server. No error Message! It works reliably but very slow with mode BOTH. In this
+    mode, each object does its own connection.
+  3 drvOpcuaSetup with mode NODEID may not connect to many opcua objects on the 
+    server. Tested with Softing Server: 150 items ok, 880 not. No error Message! 
+    It works relyably but very slow with mode BOTH. In this mode each object does 
+    its own connection - very slow.
 
-* In the same test, drvOpcuaSetup with mode NODEID will not connect to the OPC UA items
-  on the server. No error Message! It works reliably but very slow with mode BOTH. In this
-  mode, each object does its own connection.
-=======
-R0-9: 
 
+R0-9: Works stable
 
-## Known bugs
+  - Do bugfixes
+  - NEW: Build modes
 
-* drvOpcuaSetup with mode NODEID may not connect to many opcua objects on the 
-server. Tested with Softing Server: 150 items ok, 880 not. No error Message! 
-It works relyably but very slow with mode BOTH. In this mode each object does 
-its own connection - very slow.
->>>>>>> bf94f5580b5b6f77266f6ff8d1b3e71a02302517
+R0-9-1
 
+  - NEW: Windows support
+
+R0-9-2
+
+  - Get chunks of items to speedup connection establishment
+  - Remove parameter 'mode' in drv
+  
 * Please refer to the [issue tracker](https://github.com/bkuner/opcUaUnifiedAutomation/issues)
   for more details and current status of bugs and issues.
