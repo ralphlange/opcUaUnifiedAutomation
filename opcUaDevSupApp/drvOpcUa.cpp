@@ -15,12 +15,14 @@
 *   You should have received a copy of the GNU General Public License
 *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 \*************************************************************************/
-// standard header
+
 #include <stdlib.h>
-#include <boost/algorithm/string.hpp>
-#include <vector>
-#include <iostream>
 #include <signal.h>
+
+#include <boost/algorithm/string.hpp>
+#include <string>
+#include <vector>
+#include <regex>
 
 // EPICS LIBS
 #define epicsTypesGLOBAL
@@ -129,25 +131,25 @@ public:
     UaStatus disconnect();
     UaStatus subscribe();
     UaStatus unsubscribe();
-    long getNodes();
     void setBadQuality();
 
     void addOPCUA_Item(OPCUA_ItemINFO *h);
-    UaStatus getAllNodesFromBrowsePath();
-    long getNodeFromBrowsePath(OpcUa_UInt32 bpItem);
-    long getNodeFromId(OpcUa_UInt32 bpItem);
-    long getAllNodesFromId();
-    UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos);
+    long getNodes();
+    long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char nameSpaceDelim);
     UaStatus createMonitoredItems();
+
+    UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos);
+
     UaStatus writeFunc(ServiceSettings &serviceSettings,UaWriteValues &nodesToWrite,UaStatusCodeArray &results,UaDiagnosticInfos &diagnosticInfos);
     void writeComplete(OpcUa_UInt32 transactionId,const UaStatus&result,const UaStatusCodeArray& results,const UaDiagnosticInfos& diagnosticInfos);
+
     void itemStat(int v);
     void setDebug(int debug);
     int  getDebug();
 
-    std::vector<UaNodeId>         vUaNodeId;
-    std::vector<OPCUA_ItemINFO *> vUaItemInfo;
-    GetNodeMode mode;
+    /* To allow record access within the callback function need same index of node-id and itemInfo */
+    std::vector<UaNodeId>         vUaNodeId;    // array of node ids as to be used within the opcua library
+    std::vector<OPCUA_ItemINFO *> vUaItemInfo;  // array of record data including the link with the node description
 private:
     int debug;
     UaSession* m_pSession;
@@ -217,14 +219,13 @@ extern "C" {
 }
 
 DevUaClient::DevUaClient(int debug=0)
-    : mode(BROWSEPATH)
-    , debug(debug)
+    : debug(debug)
     , serverConnectionStatus(UaClient::Disconnected)
     , initialSubscriptionOver(false)
     , queue (epicsTimerQueueActive::allocate(true))
 {
     m_pSession            = new UaSession();
-    m_pDevUaSubscription  = new DevUaSubscription(this->debug);
+    m_pDevUaSubscription  = new DevUaSubscription(getDebug());
     autoConnector         = new autoSessionConnect(this, connectInterval, queue);
 }
 
@@ -302,14 +303,15 @@ void DevUaClient::setBadQuality()
     }
 }
 
-// add OPCUA_ItemINFO to vUaItemInfo Check and seutp nodes is done by getNodes()
+// add OPCUA_ItemINFO to vUaItemInfo. Setup nodes is done by getNodes()
 void DevUaClient::addOPCUA_Item(OPCUA_ItemINFO *h)
 {
     vUaItemInfo.push_back(h);
     h->itemIdx = vUaItemInfo.size()-1;
-    if(h->debug >= 4)
+    if((h->debug >= 4) || (debug >= 4))
         errlogPrintf("%s\tDevUaClient::addOPCUA_ItemINFO: idx=%d\n", h->prec->name, h->itemIdx);
 }
+
 void DevUaClient::setDebug(int d)
 {
     m_pDevUaSubscription->debug = d;
@@ -381,256 +383,187 @@ UaStatus DevUaClient::unsubscribe()
     return m_pDevUaSubscription->deleteSubscription();
 }
 
-//get whole bunch of nodes from browsePaths, no direcet node access
-UaStatus DevUaClient::getAllNodesFromBrowsePath()
-{
-    UaStatus status;
-    OPCUA_ItemINFO          *pOPCUA_ItemINFO;
-    UaDiagnosticInfos       diagnosticInfos;
-    ServiceSettings         serviceSettings;
-    UaRelativePathElements  pathElements;
-    UaBrowsePathResults     browsePathResults;
-    UaBrowsePaths           browsePaths;
-    OpcUa_UInt32            bpItem;
-    OpcUa_UInt32            itemCount=vUaItemInfo.size();
-    std::string             partPath;
+void split(std::vector<std::string> &sOut,std::string &str, const char delimiter) {
+    std::stringstream ss(str); // Turn the string into a stream.
+    std::string tok;
 
-    if(debug)   errlogPrintf("getAllNodesFromBrowsePath()\n");
-    if(debug>1) {errlogPrintf("  Show items\n"); for(bpItem=0;bpItem<itemCount;bpItem++) errlogPrintf("%4d %s '%s'\n",bpItem,(vUaItemInfo[bpItem])->prec->name,(vUaItemInfo[bpItem])->ItemPath);}
-    browsePaths.create(itemCount);
-    for(bpItem=0;bpItem<itemCount;bpItem++) {
-        std::vector<std::string> devpath; // parsed item path
-        pOPCUA_ItemINFO = vUaItemInfo[bpItem];
-
-        OpcUa_UInt16             NdIdx;
-        std::vector<std::string> itempath; // parsed item path
-        char            *endptr;
-        boost::split(itempath,pOPCUA_ItemINFO->ItemPath,boost::is_any_of(":"));
-        if(itempath.size() != 2)
-            return 1;
-        NdIdx = (OpcUa_UInt16) strtol(itempath[0].c_str(),&endptr,10); // ItemPath is nodeId
-
-        boost::split(devpath,itempath[1],boost::is_any_of("."));
-        int lenPath = devpath.size();
-        browsePaths[bpItem].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
-        pathElements.create(lenPath);
-        for(int i=0; i<lenPath;i++){
-            pathElements[i].IncludeSubtypes = OpcUa_True;
-            pathElements[i].IsInverse       = OpcUa_False;
-            pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
-            if(mode==BROWSEPATH_CONCAT) {
-                partPath = devpath[0];
-                for(int j=1;j<=i;j++) partPath += "."+devpath[j];
-            } else {
-                partPath = devpath[i];
-            }
-            OpcUa_String_AttachCopy(&pathElements[i].TargetName.Name, partPath.c_str());
-            pathElements[i].TargetName.NamespaceIndex = NdIdx;
-        }
-        browsePaths[bpItem].RelativePath.NoOfElements = pathElements.length();
-        browsePaths[bpItem].RelativePath.Elements = pathElements.detach();
+    while(getline(ss, tok, delimiter)) {
+        sOut.push_back(tok);
     }
 
-
-    status = m_pSession->translateBrowsePathsToNodeIds(
-        serviceSettings, // Use default settings
-        browsePaths,
-        browsePathResults,
-        diagnosticInfos);
-    vUaNodeId.clear();
-    for(OpcUa_UInt32 i=0; i<browsePathResults.length(); i++) {
-        if ( OpcUa_IsGood(browsePathResults[i].StatusCode) ) {
-            UaNodeId tempNode(browsePathResults[i].Targets[0].TargetId.NodeId);
-            vUaNodeId.push_back(tempNode);
-        }
-        else {
-            vUaNodeId.push_back(UaNodeId());
-            if(vUaNodeId.at(i).isNull() && debug)
-                errlogPrintf("%s not found\n",(vUaItemInfo[bpItem])->ItemPath);
-        }
-    }
-    return status;
+    return;
 }
 
-long DevUaClient::getNodeFromBrowsePath(OpcUa_UInt32 bpItem)
+long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char isNameSpaceDelim)
 {
-    UaStatus status;
-    OPCUA_ItemINFO  *pOPCUA_ItemINFO;
-    OpcUa_UInt16    NsIdx;
-    char            ItemPath[ITEMPATHLEN];
-    char            *endptr;
-
-    if(debug>1) errlogPrintf("getNodeFromBrowsePath\n");
-    pOPCUA_ItemINFO = vUaItemInfo[bpItem];
- 
-    // Syntax: <namespace index>:<browsepath>
-    NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
-
-    if (*endptr++ != ':')
-        return 1;           // is not a path
-    strncpy(ItemPath, endptr, ITEMPATHLEN);
-    ItemPath[ITEMPATHLEN-1] = '\0';
-
-    if(debug>3) errlogPrintf("\tparsed NS:%hu PATH: %s\n",NsIdx,ItemPath);
-
-    UaDiagnosticInfos       diagnosticInfos;
-    ServiceSettings         serviceSettings;
     UaRelativePathElements  pathElements;
-    UaBrowsePaths           browsePaths;
-    UaBrowsePathResults     browsePathResults;
+    std::vector<std::string> devpath;
+    std::ostringstream ss;
+    std::regex rex;
+    std::smatch matches;
 
-    browsePaths.create(1);
-    std::vector<std::string> devpath; // parsed item path
-    boost::split(devpath,ItemPath,boost::is_any_of("."));
-    int lenPath = devpath.size();
-    browsePaths[0].StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
-    pathElements.create(lenPath);
-    for(int i=0; i<lenPath; i++) {
+    ss <<"([0-9]+)"<< isNameSpaceDelim <<"(.*)";
+    rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
+
+    browsePaths.StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
+
+    split(devpath,ItemPath,browsePathDelim);
+    pathElements.create(devpath.size());
+
+    OpcUa_UInt16    nsIdx=0;
+    for(OpcUa_UInt32 i=0; i<devpath.size(); i++) {
         std::string partPath;
+        std::string nsStr;
+        if (! std::regex_match(devpath[i], matches, rex) || (matches.size() != 3)) {
+            partPath = devpath[i];
+            errlogPrintf("      p='%s'\n",partPath.c_str());
+        }
+        else {
+            char         *endptr;
+            nsStr = matches[1];
+            partPath = matches[2];
+            nsIdx = strtol(nsStr.c_str(),&endptr,10); // regexp guarantees number
+            errlogPrintf("  n=%d,p='%s'\n",nsIdx,partPath.c_str());
+            if(nsIdx == 0)     // namespace of 0 is illegal!
+                return 1;
+        }
+        if(!i && !nsIdx)    // first element must set namespace!
+            return 1;
         pathElements[i].IncludeSubtypes = OpcUa_True;
         pathElements[i].IsInverse       = OpcUa_False;
         pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
-        if(DevUaClient::mode==BROWSEPATH_CONCAT) {
-            if(i) partPath += ".";
-            partPath += devpath[i];
-        } else {
-            partPath = devpath[i];
-        }
         OpcUa_String_AttachCopy(&pathElements[i].TargetName.Name, partPath.c_str());
-        pathElements[i].TargetName.NamespaceIndex = NsIdx;
+        pathElements[i].TargetName.NamespaceIndex = nsIdx;
     }
-    browsePaths[0].RelativePath.NoOfElements = pathElements.length();
-    browsePaths[0].RelativePath.Elements = pathElements.detach();
-
-    status = m_pSession->translateBrowsePathsToNodeIds(
-        serviceSettings, // Use default settings
-        browsePaths,
-        browsePathResults,
-        diagnosticInfos);
-
-    if(debug>3) errlogPrintf("DONE translateBrowsePathsToNodeIds: %s len=%d\n",status.toString().toUtf8(),browsePathResults.length());
-
-    if( (browsePathResults.length() == 1) && ( OpcUa_IsGood(browsePathResults[0].StatusCode) )) {
-        UaNodeId tempNode(browsePathResults[0].Targets[0].TargetId.NodeId);
-        vUaNodeId.push_back(tempNode);
-    }
-    else {
-        vUaNodeId.push_back(UaNodeId());
-        if(vUaNodeId.at(bpItem).isNull() && debug)
-            errlogPrintf("DevUaClient::getNodeFromBrowsePath can't find '%s'\n",(vUaItemInfo[bpItem])->ItemPath);
-        return 1;
-
-    }
+    browsePaths.RelativePath.NoOfElements = pathElements.length();
+    browsePaths.RelativePath.Elements = pathElements.detach();
     return 0;
 }
 
-long DevUaClient::getNodeFromId(OpcUa_UInt32 bpItem)
-{
-    UaStatus status;
-
-    ServiceSettings     serviceSettings;
-    UaDataValues        values;
-    UaDiagnosticInfos   diagnosticInfos;
-    UaReadValueIds      nodeToRead;
-    OPCUA_ItemINFO      *pOPCUA_ItemINFO;
-    UaNodeId            tempNode;
-    char                *endptr;
-    OpcUa_UInt16        NsIdx;
-    char                ItemId[ITEMPATHLEN];
-
-    nodeToRead.create(1);
-    pOPCUA_ItemINFO = vUaItemInfo[bpItem];
-
-    // Syntax: <namespace index>,<identifier>
-    NsIdx = (OpcUa_UInt16) strtol(pOPCUA_ItemINFO->ItemPath, &endptr, 10);
-    if (*endptr++ != ',')
-        return 1;           // is not a Id
-    strncpy(ItemId, endptr, ITEMPATHLEN);
-    ItemId[ITEMPATHLEN-1] = '\0';
-
-    // test identifier for number
-    OpcUa_UInt32 itemId = (OpcUa_UInt32) strtol(ItemId, &endptr, 10);
-    if(ItemId != endptr) // numerical id
-        tempNode.setNodeId( itemId, NsIdx);
-    else                 // string id
-        tempNode.setNodeId(UaString(ItemId), NsIdx);
-
-    if(debug>2) errlogPrintf("getNodeFromId NODE: '%s'\n",tempNode.toString().toUtf8());
-    nodeToRead[0].AttributeId = OpcUa_Attributes_Value;
-    tempNode.copyTo(&(nodeToRead[0].NodeId)) ;
-
-    status = m_pSession->read(serviceSettings,0,OpcUa_TimestampsToReturn_Both,nodeToRead,values,diagnosticInfos);
-    if(status.isBad()){
-        vUaNodeId.push_back(UaNodeId());
-        if(debug>2) errlogPrintf("\tfailed to get node\n");
-        return 1;
-    }
-    else {
-        vUaNodeId.push_back(tempNode);
-    }
-    return 0;
-}
-
-long DevUaClient::getAllNodesFromId()
-{
-    OpcUa_UInt32        nrOfItems;
-
-    nrOfItems = vUaItemInfo.size();
-    for(OpcUa_UInt32 i=0; i<nrOfItems; i++) {
-        ignore_result( getNodeFromId(i) );
-    }
-
-    return 0;
-}
-
-// clear vUaNodeId and recreate all nodes
+/* clear vUaNodeId and recreate all nodes from pOPCUA_ItemINFO->ItemPath data.
+ *    vUaItemInfo:  input link is either
+ *    NODE_ID    or      BROWSEPATH
+ *       |                   |
+ *    getNodeId          getBrowsePathItem()
+ *       |                   |
+ *       |               translateBrowsePathsToNodeIds()
+ *       |                   |
+ *    vUaNodeId holds all nodes.
+ * Index of vUaItemInfo has to match index of vUaNodeId to get record
+ * access in DevUaSubscription::dataChange callback!
+ */
 long DevUaClient::getNodes()
 {
-    UaStatus    status;
-    int         ret=0;
-    OpcUa_UInt32 itemCount=vUaItemInfo.size();
+    long                ret=0;
+    OpcUa_UInt32        i;
+    OpcUa_UInt32        nrOfItems = vUaItemInfo.size();
+    OpcUa_UInt32        nrOfBrowsePathItems=0;
+    std::vector<UaNodeId> vReadNodeIds;
+    std::vector<OpcUa_UInt32> IndexOfBrowsPathItemInvReadNodeIds;
+    char delim;
+    char isNodeIdDelim = ',';
+    char isBrowsePathDelim = ':';
+    char isNameSpaceDelim = ':';
+    char pathDelim = '.';
+    UaStatus status;
+    UaDiagnosticInfos       diagnosticInfos;
+    ServiceSettings         serviceSettings;
+    UaBrowsePathResults     browsePathResults;
+    UaBrowsePaths           browsePaths;
+
+    std::ostringstream ss;
+    std::regex rex;
+    std::smatch matches;
+
+    ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isBrowsePathDelim<<"])(.*)";
+    rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
     vUaNodeId.clear();
-    if(false == m_pSession->isConnected() ) {
-         errlogPrintf("ERROR: DevUaClient::getNodes() Session not connected - deferring initialisation\n");
-         initialSubscriptionOver = true;
-         return 1;
-    }
-    switch(mode) {
-    case BOTH:
-        if(debug) errlogPrintf("DevUaClient::getNodes(BOTH)\n");
-        for(OpcUa_UInt32 bpItem=0;bpItem<itemCount;bpItem++) {
-            if(debug>1) errlogPrintf("\t%d: %s\n",bpItem,(vUaItemInfo[bpItem])->ItemPath);
-            if(getNodeFromBrowsePath( bpItem))
-                if(getNodeFromId(bpItem) )
-                    return 1;
-        }
-        break;
-    case NODEID:
-        if(debug) errlogPrintf("DevUaClient::getNodes(NODEID)\n");
-        ret = getAllNodesFromId();
-        break;
-    case BROWSEPATH:
-    case BROWSEPATH_CONCAT:
-        if(debug) errlogPrintf("DevUaClient::getNodes(BROWSEPATH/BROWSEPATH_CONCAT)\n");
-        status = getAllNodesFromBrowsePath();
-        if(status.isBad())
+
+    browsePaths.create(nrOfItems);
+    for(i=0;i<nrOfItems;i++) {
+        OPCUA_ItemINFO        *pOPCUA_ItemINFO = vUaItemInfo[i];
+        std::string ItemPath = pOPCUA_ItemINFO->ItemPath;
+        int  ns;    // namespace
+        UaNodeId    tempNode;
+        if (! std::regex_match(ItemPath, matches, rex) || (matches.size() != 4)) {
+            errlogPrintf("%s getNodes() SKIP for bad link. Can't parse '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
             ret=1;
-        break;
-    default:
-        errlogPrintf("DevUaClient::getNodes() illegal mode: %d\n", mode);
-    }
-
-    if(debug)  errlogPrintf("OPCUA session initialised (monitoring %lu items on 1 subscription)\n",(unsigned long) vUaNodeId.size());
-
-    if(debug>1) {
-        errlogPrintf("DevUaClient::getNodes() Dump nodes and items after init\n");
-        for(OpcUa_UInt32 i=0;i<vUaNodeId.size();i++) {
-            UaNodeId tempNode;
-            tempNode = vUaNodeId.at(i);
-            OPCUA_ItemINFO *pOpcItem;
-            pOpcItem = vUaItemInfo.at(i);
-            errlogPrintf("%4d %s\tpath:'%s'\t id:'%s'\n",i,pOpcItem->prec->name,pOpcItem->ItemPath,tempNode.toFullString().toUtf8());
+            continue;
         }
+        delim = ((std::string)matches[2]).c_str()[0];
+        std::string path = matches[3];
+
+        int isStr=0;
+        try {
+            ns = stoi(matches[1]);
+        }
+        catch (const std::invalid_argument& ia) {
+            isStr=1;
+        }
+        if( isStr ) {      // later versions: string tag to specify a subscription group
+            errlogPrintf("%s getNodes() SKIP for bad link illegal namespace tag of string type in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+            ret=1;
+            continue;
+        }
+
+        //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",pOPCUA_ItemINFO->prec->name,ns,delim,path.c_str());
+        if(delim == isBrowsePathDelim) {
+            if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
+                if(debug) errlogPrintf("%s SKIP for bad link: illegal namespace in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+                ret = 1;
+                continue;
+            }
+            nrOfBrowsePathItems++;
+            IndexOfBrowsPathItemInvReadNodeIds.push_back(i);
+        }
+        else if(delim == isNodeIdDelim) {
+            // test identifier for number
+            OpcUa_UInt32 itemId;
+            char         *endptr;
+
+            itemId = (OpcUa_UInt32) strtol(path.c_str(), &endptr, 10);
+            if(endptr == NULL) { // numerical id
+                tempNode.setNodeId( itemId, ns);
+            }
+            else {                 // string id
+                tempNode.setNodeId(UaString(path.c_str()), ns);
+            }
+            if(debug>2) errlogPrintf("%3u %s\tNODE: '%s'\n",i,pOPCUA_ItemINFO->prec->name,tempNode.toString().toUtf8());
+            vUaNodeId.push_back(tempNode);
+            vReadNodeIds.push_back(tempNode);
+        }
+        else {
+            errlogPrintf("%s SKIP for bad link: '%s' unknown delimiter\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+            ret = 1;
+            continue;
+        }
+    }
+    if(ret) /* if there are illegal links: stop here! May be improved by del item in vUaItemInfo, but need same index for vUaItemInfo and vUaNodeId */
+        return ret;
+
+    if(nrOfBrowsePathItems) {
+        errlogPrintf("nrOfBrowsePathItems=%d\n",nrOfBrowsePathItems);
+        browsePaths.resize(nrOfBrowsePathItems);
+        status = m_pSession->translateBrowsePathsToNodeIds(
+            serviceSettings, // Use default settings
+            browsePaths,
+            browsePathResults,
+            diagnosticInfos);
+
+        errlogPrintf("translateBrowsePathsToNodeIds stat=%d (%s). nrOfItems:%d\n",status.statusCode(),status.toString().toUtf8(),browsePathResults.length());
+        for(i=0; i<browsePathResults.length(); i++) {
+            UaNodeId tempNode;
+            if ( OpcUa_IsGood(browsePathResults[i].StatusCode) ) {
+                tempNode = UaNodeId(browsePathResults[i].Targets[0].TargetId.NodeId);
+                vUaNodeId.push_back(tempNode);
+            }
+            else {
+                tempNode = UaNodeId();
+                vUaNodeId.push_back(tempNode);
+            }
+            errlogPrintf("Node: idx=%d node=%s\n",i,tempNode.toString().toUtf8());
+        }
+
     }
     return ret;
 }
@@ -667,7 +600,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
     UaReadValueIds nodeToRead;
     OpcUa_UInt32        i,j;
 
-    if(debug) errlogPrintf("CALL DevUaClient::readFunc()\n");
+    if(debug>=2) errlogPrintf("CALL DevUaClient::readFunc()\n");
     nodeToRead.create(pMyClient->vUaNodeId.size());
     for (i=0,j=0; i <pMyClient->vUaNodeId.size(); i++ )
     {
@@ -713,6 +646,114 @@ void DevUaClient::itemStat(int verb)
                    pOPCUA_ItemINFO->stat,pOPCUA_ItemINFO->ItemPath );
         }
     }
+}
+
+/* Maximize debug level from driver-debug (active >=1) and record-debug (active >= 2)
+ * use in setRecVal to minimize call parameters
+ */
+inline int maxDebug(int dbg,int recDbg) {
+    if(dbg) ++dbg;
+    if(recDbg>dbg) return recDbg;
+    else return dbg;
+}
+epicsRegisterFunction(maxDebug);
+
+/* write variant value from opcua read or callback to - whatever is determined in pOPCUA_ItemINFO*/
+long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
+{
+    if(val.isArray()){
+        UaByteArray   aByte;
+        UaInt16Array  aInt16;
+        UaUInt16Array aUInt16;
+        UaInt32Array  aInt32;
+        UaUInt32Array aUInt32;
+        UaFloatArray  aFloat;
+        UaDoubleArray aDouble;
+
+        if(val.arraySize() <= pOPCUA_ItemINFO->arraySize) {
+            switch(pOPCUA_ItemINFO->recDataType) {
+            case epicsInt8T:
+            case epicsUInt8T:
+                val.toByteArray( aByte);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aByte.data(),sizeof(epicsInt8)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsInt16T:
+                val.toInt16Array( aInt16);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aInt16.rawData(),sizeof(epicsInt16)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsEnum16T:
+            case epicsUInt16T:
+                val.toUInt16Array( aUInt16);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aUInt16.rawData(),sizeof(epicsUInt16)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsInt32T:
+                val.toInt32Array( aInt32);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aInt32.rawData(),sizeof(epicsInt32)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsUInt32T:
+                val.toUInt32Array( aUInt32);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aUInt32.rawData(),sizeof(epicsUInt32)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsFloat32T:
+                val.toFloatArray( aFloat);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aFloat.rawData(),sizeof(epicsFloat32)*pOPCUA_ItemINFO->arraySize);
+                break;
+            case epicsFloat64T:
+                val.toDoubleArray( aDouble);
+                memcpy(pOPCUA_ItemINFO->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*pOPCUA_ItemINFO->arraySize);
+                break;
+            default:
+                if(debug >= 2) errlogPrintf("%s setRecVal(): Can't convert array data type\n",pOPCUA_ItemINFO->prec->name);
+                return 1;
+            }
+        }
+        else {
+            if(debug >= 2) errlogPrintf("%s setRecVal() Error record arraysize %d < OpcItem Size %d\n", pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
+            return 1;
+        }
+    }      // end array
+    else { // is no array
+        void *toRec; // destination of the data, VAL, RVAL field directly: OUT records ** OR **
+                     // internal varVal to be set when processed: IN records.
+        epicsType dataType;
+
+        if(pOPCUA_ItemINFO->inpDataType) {   // is OUT Record. TODO: what about records data conversion?
+            toRec = pOPCUA_ItemINFO->pInpVal;
+            dataType = pOPCUA_ItemINFO->inpDataType;
+        }
+        else {
+            toRec = &(pOPCUA_ItemINFO->varVal); // is IN Record
+            dataType = pOPCUA_ItemINFO->recDataType;
+        }
+
+        switch(dataType){
+        case epicsInt32T:
+            val.toInt32( *((epicsInt32*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)toRec));
+            break;
+        case epicsUInt32T:
+            val.toUInt32( *((epicsUInt32*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)toRec));
+            break;
+        case epicsFloat64T:
+            val.toDouble( *((epicsFloat64*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsFloat64 recVal: %lf\n",*((epicsFloat64*)toRec));
+            break;
+        case epicsOldStringT:
+            strncpy((char*)toRec,val.toString().toUtf8(),ANY_VAL_STRING_SIZE);    // string length: see epicsTypes.h
+            if(debug >= 3)
+                    errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(char*)toRec);
+            break;
+        default:
+            if(debug>= 2)
+                    errlogPrintf("%s setRecVal() Error unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /***************** just for debug ********************/
@@ -814,7 +855,7 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
         errlogPrintf("OpcWriteValue(%d,%f)\nTRANSLATEBROWSEPATH\n",opcUaItemIndex,val);
         pMyClient->setDebug(verbose);
     }
-    
+
     nodesToWrite.create(1);
 //from OPCUA_ItemINFO:    UaNodeId temp1Node(pOPCUA_ItemINFO->ItemPath,pOPCUA_ItemINFO->NdIdx);
     UaNodeId tempNode(pMyClient->vUaNodeId[pOPCUA_ItemINFO->itemIdx]);
@@ -994,8 +1035,8 @@ long OpcUaSetupMonitors(void)
             }
             else {
 
-                pOPCUA_ItemINFO->itemDataType = (int) values[i].Value.Datatype;
                 epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+                pOPCUA_ItemINFO->itemDataType = (int) values[i].Value.Datatype;
                 pOPCUA_ItemINFO->isArray = 0;
                 epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
                 if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
@@ -1031,7 +1072,7 @@ void addOPCUA_Item(OPCUA_ItemINFO *h)
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
-long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int debug=0)
+long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int debug=0)
 {
     UaStatus status;
     // Initialize the UA Stack platform layer
@@ -1043,7 +1084,6 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
     pMyClient->hostName = nodeName;
-    pMyClient->mode = mode;
     pMyClient->url = g_serverUrl;
     pMyClient->setDebug(debug);
     // Connect to OPC UA Server
@@ -1067,10 +1107,9 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
 static const iocshArg drvOpcuaSetupArg0 = {"[URL] to server", iocshArgString};
 static const iocshArg drvOpcuaSetupArg1 = {"[CERT_PATH] optional", iocshArgString};
 static const iocshArg drvOpcuaSetupArg2 = {"[HOST] optional", iocshArgString};
-static const iocshArg drvOpcuaSetupArg3 = {"MODE: BOTH=0,NODEID=1,BROWSEPATH=2,BROWSEPATH_CONCAT=3", iocshArgInt};
-static const iocshArg drvOpcuaSetupArg4 = {"Debug Level for library", iocshArgInt};
-static const iocshArg *const drvOpcuaSetupArg[5] = {&drvOpcuaSetupArg0,&drvOpcuaSetupArg1,&drvOpcuaSetupArg2,&drvOpcuaSetupArg3,&drvOpcuaSetupArg4};
-iocshFuncDef drvOpcuaSetupFuncDef = {"drvOpcuaSetup", 5, drvOpcuaSetupArg};
+static const iocshArg drvOpcuaSetupArg3 = {"Debug Level for library", iocshArgInt};
+static const iocshArg *const drvOpcuaSetupArg[4] = {&drvOpcuaSetupArg0,&drvOpcuaSetupArg1,&drvOpcuaSetupArg2,&drvOpcuaSetupArg3};
+iocshFuncDef drvOpcuaSetupFuncDef = {"drvOpcuaSetup", 4, drvOpcuaSetupArg};
 void drvOpcuaSetup (const iocshArgBuf *args )
 {
     UaString g_serverUrl;
@@ -1078,7 +1117,6 @@ void drvOpcuaSetup (const iocshArgBuf *args )
     UaString g_defaultHostname("unknown_host");
     UaString g_applicationCertificate;
     UaString g_applicationPrivateKey;
-    int g_mode = 0;
 
     if(args[0].sval == NULL)
     {
@@ -1105,16 +1143,11 @@ void drvOpcuaSetup (const iocshArgBuf *args )
     {
         g_defaultHostname = szHostName;
     }
-    else 
+    else
         if(strlen(args[2].sval) > 0)
             g_defaultHostname = args[2].sval;
 
     g_certificateStorePath = args[1].sval;
-    g_mode = args[3].ival;
-    if( (g_mode<0)||(g_mode >= GETNODEMODEMAX)) {
-        errlogPrintf("drvOpcuaSetup: parameter mode=%d: outside range, set to default: Browsepath or nodeId (BOTH)\n",g_mode);
-        g_mode = 0;
-    }
     int verbose = args[4].ival;
 
     if(verbose) {
@@ -1131,7 +1164,7 @@ void drvOpcuaSetup (const iocshArgBuf *args )
         }
     }
 
-    opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,(GetNodeMode)g_mode,verbose);
+    opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,verbose);
 }
 extern "C" {
 epicsRegisterFunction(drvOpcuaSetup);

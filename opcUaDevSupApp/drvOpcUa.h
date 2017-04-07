@@ -38,8 +38,10 @@ extern "C" {
 // client:
     extern long OpcReadValues(int verbose,int monitored);
     extern long OpcWriteValue(int opcUaItemIndex,double val,int verbose);
+    extern int maxDebug(int dbg,int recDbg);
 #ifdef __cplusplus
 }
+    extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug);
     extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int verbose);
 #endif
 

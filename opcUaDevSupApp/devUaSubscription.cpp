@@ -68,130 +68,33 @@ void DevUaSubscription::dataChange(
         try {
             if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
             {
-                if(debug || (pOPCUA_ItemINFO->debug>= 3)) errlogPrintf("%s %s Variable %d failed with status %s\n",timeBuf ,pOPCUA_ItemINFO->prec->name,dataNotifications[i].ClientHandle,
-                       UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8());
+                if(debug) errlogPrintf("%s %s dataChange FAILED with status %s, Handle=%d\n",timeBuf,pOPCUA_ItemINFO->prec->name,
+                       UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8(),dataNotifications[i].ClientHandle);
                 throw dataChangeError();
             }
             pOPCUA_ItemINFO->stat = 0;
             UaVariant val = dataNotifications[i].Value.Value;
-
-            if(val.isArray()){
-                UaByteArray   aByte;
-                UaInt16Array  aInt16;
-                UaUInt16Array aUInt16;
-                UaInt32Array  aInt32;
-                UaUInt32Array aUInt32;
-                UaFloatArray  aFloat;
-                UaDoubleArray aDouble;
-                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\t Array\n", pOPCUA_ItemINFO->prec->name);
-
-                if(val.arraySize() <= pOPCUA_ItemINFO->arraySize) {
-                    switch(pOPCUA_ItemINFO->recDataType) {
-                    case epicsInt8T:
-                    case epicsUInt8T:
-                        val.toByteArray( aByte);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aByte.data(),sizeof(epicsInt8)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsInt16T:
-                        val.toInt16Array( aInt16);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aInt16.rawData(),sizeof(epicsInt16)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsEnum16T:
-                    case epicsUInt16T:
-                        val.toUInt16Array( aUInt16);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aUInt16.rawData(),sizeof(epicsUInt16)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsInt32T:
-                        val.toInt32Array( aInt32);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aInt32.rawData(),sizeof(epicsInt32)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsUInt32T:
-                        val.toUInt32Array( aUInt32);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aUInt32.rawData(),sizeof(epicsUInt32)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsFloat32T:
-                        val.toFloatArray( aFloat);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aFloat.rawData(),sizeof(epicsFloat32)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    case epicsFloat64T:
-                        val.toDoubleArray( aDouble);
-                        memcpy(pOPCUA_ItemINFO->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*pOPCUA_ItemINFO->arraySize);
-                        break;
-                    default:
-                        if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("%s dataChange: Can't convert data type\n",pOPCUA_ItemINFO->prec->name);
-                        throw dataChangeError();
-                    }
+            if(setRecVal(val,pOPCUA_ItemINFO,maxDebug(debug,pOPCUA_ItemINFO->debug))) {
+                if(debug) errlogPrintf("%s %s dataChange FAILED: setRecVal()\n",timeBuf,pOPCUA_ItemINFO->prec->name);
+                throw dataChangeError();
+            }
+            if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
+                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
+                if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
+                    pOPCUA_ItemINFO->noOut = 1;
+                    callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
                 }
-                else {
-                    if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s dataChange Error Record arraysize %d < OpcItem Size %d\n",timeBuf, pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
-                    throw dataChangeError();
+                else {  // Means dataChange after write operation of the record. Ignore this, no callback, suppress another processing of the record
+                    pOPCUA_ItemINFO->noOut=0;
                 }
+            }
+            else { // is IN Record
+                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tIN rec\n", pOPCUA_ItemINFO->prec->name);
                 if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
                 {
                     scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
                 }
-            }      // end array
-            else { // is no array
-                if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
-                    if(pOPCUA_ItemINFO->debug>= 3) errlogPrintf("\tOUT rec noOut:%d ",pOPCUA_ItemINFO->noOut);
-                    if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
-                        pOPCUA_ItemINFO->noOut = 1;
-                        switch(pOPCUA_ItemINFO->inpDataType){ // Write direct to the records VAL field
-                            case epicsInt32T:
-                                val.toInt32( *((OpcUa_Int32*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)pOPCUA_ItemINFO->pRecVal));
-                                break;
-                            case epicsUInt32T:
-                                val.toUInt32( *((OpcUa_UInt32*)pOPCUA_ItemINFO->pInpVal));
-                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)pOPCUA_ItemINFO->pRecVal));
-                                break;
-                            case epicsFloat64T:
-                                val.toDouble( *((epicsFloat64*)pOPCUA_ItemINFO->pInpVal) );
-                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsFloat64 recVal: %lf\n",*((epicsFloat64*)pOPCUA_ItemINFO->pRecVal));
-                                break;
-                            case epicsOldStringT:
-                                strncpy((char*)pOPCUA_ItemINFO->pInpVal,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                                if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsOldStringT opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
-                                break;
-                        default:
-                            if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s\tdataChange: unsupported recDataType '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
-                            throw dataChangeError();
-                        }
-                        callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
-                    }
-                    else {  // Means dataChange after write operation of the record. Ignore this, no callback, suppress another processing of the record
-                        pOPCUA_ItemINFO->noOut=0;
-                    }
-                }
-                else { // is IN Record
-                    if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tIN rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
-                    switch(pOPCUA_ItemINFO->recDataType){ // Write to the OPCUA_ItemINFO variant, record processing will get the value when processing
-                        case epicsInt32T:
-                            val.toInt32( reinterpret_cast<OpcUa_Int32&>( (pOPCUA_ItemINFO->varVal).Int32 ) );
-                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsInt32 opcVal: %d\n",(pOPCUA_ItemINFO->varVal).Int32);
-                            break;
-                        case epicsUInt32T:
-                            val.toUInt32( reinterpret_cast<OpcUa_UInt32&>( (pOPCUA_ItemINFO->varVal).UInt32) );
-                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsUInt32 opcVal: %u\n",(pOPCUA_ItemINFO->varVal).UInt32);
-                            break;
-                        case epicsFloat64T:
-                            val.toDouble( (pOPCUA_ItemINFO->varVal).Double);
-                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsFloat64 opcVal: %lf\n",(pOPCUA_ItemINFO->varVal).Double);
-                            break;
-                        case epicsOldStringT:
-                            strncpy((pOPCUA_ItemINFO->varVal).cString,val.toString().toUtf8(),MAX_STRING_SIZE);    // string length: see epicsTypes.h
-                            if(pOPCUA_ItemINFO->debug >= 3) errlogPrintf("\tepicsOldString opcVal: '%s'\n",(pOPCUA_ItemINFO->varVal).cString);
-                            break;
-                    default:
-                        if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s\tdataChange: unsupported recDataType '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
-                        throw dataChangeError();
-                    }
-                    if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
-                    {
-                        scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
-                    }
 
-                }
             }
         }
         catch(dataChangeError) {
@@ -203,33 +106,26 @@ void DevUaSubscription::dataChange(
             if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s\tdataChange: unexpected exception '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
             pOPCUA_ItemINFO->debug = 4;
         }
+
+        // set Timestamp if specified by TSE field
+        UaDateTime dt = UaDateTime(dataNotifications[i].Value.ServerTimestamp);
+        if(pOPCUA_ItemINFO->prec->tse == epicsTimeEventDeviceTime ) {
+            pOPCUA_ItemINFO->prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+            pOPCUA_ItemINFO->prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+        }
+        if(pOPCUA_ItemINFO->debug >= 4) {
+            errlogPrintf("server timestamp: %s, TSE:%d\n",dt.toString().toUtf8(),pOPCUA_ItemINFO->prec->tse);
+        }
         epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
 
-        setTimestamp(pOPCUA_ItemINFO,UaDateTime(dataNotifications[i].Value.ServerTimestamp));
 
         if(pOPCUA_ItemINFO->debug >= 4)
-                errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
-                   pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
-                   pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                   pOPCUA_ItemINFO->noOut);
+            errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
+                         pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
+                    pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
+                    pOPCUA_ItemINFO->noOut);
     } //end for
     return;
-}
-
-void setTimestamp(OPCUA_ItemINFO * pOPCUA_ItemINFO, const UaDateTime &dt)
-{
-    dbCommon *prec = pOPCUA_ItemINFO->prec;
-
-    if(prec->tse == epicsTimeEventDeviceTime ) {
-        prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
-        prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
-    }
-    if(pOPCUA_ItemINFO->debug >= 4) {
-        char currentBuffer[30];
-        char timeBuffer[30];
-        epicsTimeToStrftime(timeBuffer,28,"%y-%m-%dT%H:%M:%S.%06f",&(prec->time));
-        errlogPrintf("\tsetTimestamp: Curr:%s TSE:%d Server:%s recTIME:%s\n",getTime(currentBuffer),prec->tse,dt.toString().toUtf8(),timeBuffer);
-    }
 }
 
 void DevUaSubscription::newEvents(

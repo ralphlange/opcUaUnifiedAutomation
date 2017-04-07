@@ -51,6 +51,4 @@ private:
     UaSubscription*             m_pSubscription;
     std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo;
 };
-extern void setTimestamp(OPCUA_ItemINFO * pItem, const UaDateTime &dt);
-
 #endif // DEVUASUBSCRIPTION_H
