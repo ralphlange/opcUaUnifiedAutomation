@@ -556,7 +556,8 @@ long write_stringout (struct stringoutRecord* prec)
 /***************************************************************************
     	    	    	    	Waveform Support
  **************************************************************************-*/
-long init_waveformRecord(struct waveformRecord* prec) {
+long init_waveformRecord(struct waveformRecord* prec)
+{
     long ret = 0;
     int recType=0;
     prec->dpvt = NULL;

@@ -23,13 +23,13 @@
 #include <epicsTypes.h>
 #include <epicsMutex.h>
 
-
+#define ANY_VAL_STRING_SIZE 80
 typedef union {                     /* A subset of the built in types we use */
         epicsInt32   Int32;
         epicsUInt32  UInt32;
         epicsFloat64 Double;
 //        char        *cString;     /* need a buffer to receive strings, see sampleSubscription.cpp! */
-        char         cString[80];   /* find max defined stringsize of base: */
+        char         cString[ANY_VAL_STRING_SIZE];   /* find max defined stringsize of base: */
 } epicsAnyVal;                      // perl -ne 'print "$2 $1\n" if($_=~/char\s+([\w\d_]+)\[(\d+)\]/);' base-3.14.12.5/include/*|sort -u
 
 #define ITEMPATHLEN 128
@@ -40,7 +40,7 @@ typedef struct OPCUA_Item {
 
     int itemDataType;       /* OPCUA Datatype */
     epicsType recDataType;  /* Data type of the records VAL/RVAL field */
-    epicsType inpDataType;  /* OUT records: the type of the records input = VAL field, INP records = NULL */
+    epicsType inpDataType;  /* OUT records: the type of the records input = VAL field - may differ from RVAL type!. INP records = NULL */
     int itemIdx;            /* Index of this item in UaNodeId vector */
 
     epicsAnyVal varVal;     /* buffer to hold the value got from Opc for all scalar values, including string   */
