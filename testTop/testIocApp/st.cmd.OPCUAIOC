@@ -5,11 +5,14 @@ epicsEnvSet IOC OPCUAIOC
 dbLoadDatabase "dbd/OPCUAIOC.dbd",0,0
 ${IOC}_registerRecordDeviceDriver pdbbase
 
-# hazel /home/kuner/Dokumente.BESSY/projects/opcProjekt/FREEOPCUA/freeOpcUaEpicsServer/bin/linux-x86_64/server
-drvOpcuaSetup("opc.tcp://localhost:48010","","hazel",0,0)
-#dbLoadRecords("db/freeopcuaTEST.db")
+# local freeOpcUaEpicsServer/bin/linux-x86_64/server
+drvOpcuaSetup("opc.tcp://localhost:4841","","",0)
+dbLoadRecords("db/freeopcuaTEST.db")
 #dbLoadRecords("db/testServer.db")
-dbLoadRecords("db/OPCUA_RECORD.db")
+
+# local Softing test server
+#drvOpcuaSetup("opc.tcp://localhost:48010","","",0)
+#dbLoadRecords("db/OPCUA_RECORD.db")
 
 opcuaDebug(3)
 setIocLogDisable 1
