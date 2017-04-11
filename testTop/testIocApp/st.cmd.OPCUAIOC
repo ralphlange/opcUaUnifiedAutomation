@@ -6,9 +6,10 @@ dbLoadDatabase "dbd/OPCUAIOC.dbd",0,0
 ${IOC}_registerRecordDeviceDriver pdbbase
 
 # hazel /home/kuner/Dokumente.BESSY/projects/opcProjekt/FREEOPCUA/freeOpcUaEpicsServer/bin/linux-x86_64/server
-drvOpcuaSetup("opc.tcp://localhost:4841","","hazel",0,0)
-dbLoadRecords("db/freeopcuaTEST.db")
+drvOpcuaSetup("opc.tcp://localhost:48010","","hazel",0,0)
+#dbLoadRecords("db/freeopcuaTEST.db")
 #dbLoadRecords("db/testServer.db")
+dbLoadRecords("db/OPCUA_RECORD.db")
 
 opcuaDebug(3)
 setIocLogDisable 1
