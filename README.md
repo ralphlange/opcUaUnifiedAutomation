@@ -241,7 +241,6 @@ information to this record.
 ```
 
 Show all connections.
-TechniSat 5/2x4 G-R TechniRouter (Unicable-Multischalter) 
 
 ## Release notes
 

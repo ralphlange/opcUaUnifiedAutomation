@@ -116,7 +116,7 @@ class DevUaClient : public UaSessionCallback
 {
     UA_DISABLE_COPY(DevUaClient);
 public:
-    DevUaClient(int debug);
+    DevUaClient(int autocon,int debug);
     virtual ~DevUaClient();
 
     // UaSessionCallback implementation ----------------------------------------------------
@@ -152,6 +152,7 @@ public:
     std::vector<OPCUA_ItemINFO *> vUaItemInfo;  // array of record data including the link with the node description
 private:
     int debug;
+    int autoConnect;
     UaSession* m_pSession;
     DevUaSubscription* m_pDevUaSubscription;
     UaClient::ServerStatus serverConnectionStatus;
@@ -218,7 +219,7 @@ extern "C" {
     }
 }
 
-DevUaClient::DevUaClient(int debug=0)
+DevUaClient::DevUaClient(int autoCon=1,int debug=0)
     : debug(debug)
     , serverConnectionStatus(UaClient::Disconnected)
     , initialSubscriptionOver(false)
@@ -226,7 +227,9 @@ DevUaClient::DevUaClient(int debug=0)
 {
     m_pSession            = new UaSession();
     m_pDevUaSubscription  = new DevUaSubscription(getDebug());
-    autoConnector         = new autoSessionConnect(this, connectInterval, queue);
+    autoConnect = autoCon;
+    if(autoConnect)
+        autoConnector     = new autoSessionConnect(this, connectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()
@@ -243,7 +246,8 @@ DevUaClient::~DevUaClient()
         m_pSession = NULL;
     }
     queue.release();
-    delete autoConnector;
+    if(autoConnect)
+        delete autoConnector;
 }
 
 void DevUaClient::connectionStatusChanged(
@@ -813,27 +817,54 @@ long OpcReadValues(int verbose,int monitored)
         pMyClient->setDebug(debugStat);
         return 1;
     }
-    if(monitored)
-        pMyClient->createMonitoredItems();
-    else {
-        status = pMyClient->readFunc(values,serviceSettings,diagnosticInfos );
-        if (status.isGood()) {
-            if(verbose) errlogPrintf("READ VALUES success: %i\n",values.length());
-            for(OpcUa_UInt32 j=0;j<values.length();j++) {
+    status = pMyClient->readFunc(values,serviceSettings,diagnosticInfos );
+    if (status.isGood()) {
+        if(verbose) errlogPrintf("READ VALUES success: %i\n",values.length());
+        for(OpcUa_UInt32 j=0;j<values.length();j++) {
+            OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[j];
 
-                if (OpcUa_IsGood(values[j].StatusCode)) {
-                    UaVariant val = values[j].Value;
+            if (OpcUa_IsGood(values[j].StatusCode)) {
+                UaVariant val = values[j].Value;
+                if( val.isArray()) {
                     printVal(val,j);
+                    if(monitored) {
+                        errlogPrintf("Monitored Arrays not supported yet");
+                        return 1;
+                    }
                 }
                 else {
-                    errlogPrintf("Read item[%i] failed with status %s\n",j,UaStatus(values[j].StatusCode).toString().toUtf8());
+                    if(monitored) 
+                        pOPCUA_ItemINFO->debug=3;
+                    pOPCUA_ItemINFO->itemDataType = (int) values[j].Value.Datatype;
+                    switch((int)pOPCUA_ItemINFO->itemDataType){
+                    case OpcUaType_Boolean: pOPCUA_ItemINFO->recDataType = epicsInt8T;      break;
+                    case OpcUaType_SByte:   pOPCUA_ItemINFO->recDataType = epicsInt8T;      break;
+                    case OpcUaType_Byte:    pOPCUA_ItemINFO->recDataType = epicsUInt8T;     break;
+                    case OpcUaType_Int16:   pOPCUA_ItemINFO->recDataType = epicsInt16T;     break;
+                    case OpcUaType_UInt16:  pOPCUA_ItemINFO->recDataType = epicsUInt16T;    break;
+                    case OpcUaType_Int32:   pOPCUA_ItemINFO->recDataType = epicsInt32T;     break;
+                    case OpcUaType_UInt32:  pOPCUA_ItemINFO->recDataType = epicsUInt32T;    break;
+                    case OpcUaType_Float:   pOPCUA_ItemINFO->recDataType = epicsFloat32T;   break;
+                    case OpcUaType_Double:  pOPCUA_ItemINFO->recDataType = epicsFloat64T;   break;
+                    case OpcUaType_String:  pOPCUA_ItemINFO->recDataType = epicsOldStringT; break;
+                    default:
+                        errlogPrintf("OpcReadValues(): '%s' unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
+                    }
+                    setRecVal(val,pOPCUA_ItemINFO,4);
                 }
             }
+            else {
+                errlogPrintf("Read item[%i] failed with status %s\n",j,UaStatus(values[j].StatusCode).toString().toUtf8());
+            }
         }
-        else {
-            // Service call failed
-            errlogPrintf("READ VALUES failed with status %s\n", status.toString().toUtf8());
-        }
+    }
+    else {
+        // Service call failed
+        errlogPrintf("READ VALUES failed with status %s\n", status.toString().toUtf8());
+        return 1;
+    }
+    if(monitored) {
+        pMyClient->createMonitoredItems();
     }
     pMyClient->setDebug(debugStat);
     return 0;
@@ -1072,14 +1103,14 @@ void addOPCUA_Item(OPCUA_ItemINFO *h)
 }
 
 /* iocShell/Client: Setup server url and certificates, connect and subscribe */
-long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int debug=0)
+long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int autoConn,int debug=0)
 {
     UaStatus status;
     // Initialize the UA Stack platform layer
     UaPlatformLayer::init();
 
     // Create instance of DevUaClient
-    pMyClient = new DevUaClient(debug);
+    pMyClient = new DevUaClient(autoConn,debug);
 
     pMyClient->applicationCertificate = g_applicationCertificate;
     pMyClient->applicationPrivateKey  = g_applicationPrivateKey;
@@ -1164,7 +1195,7 @@ void drvOpcuaSetup (const iocshArgBuf *args )
         }
     }
 
-    opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,verbose);
+    opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,1,verbose);
 }
 extern "C" {
 epicsRegisterFunction(drvOpcuaSetup);

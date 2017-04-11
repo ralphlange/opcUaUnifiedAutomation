@@ -89,7 +89,6 @@ void DevUaSubscription::dataChange(
                 }
             }
             else { // is IN Record
-                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tIN rec\n", pOPCUA_ItemINFO->prec->name);
                 if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
                 {
                     scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
