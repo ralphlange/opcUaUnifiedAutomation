@@ -1,0 +1,78 @@
+record(ai,"REC:rdTemp"){
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+#        field(PINI,"YES")
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.Temperature")
+        field(LINR,"SLOPE")
+        field(ASLO,"0.01")
+        field(AOFF,"0")
+}
+record(longin,"REC:rdTempINT"){
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.Temperature")
+}
+record(ai,"REC:rdPwr"){
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(TSE, "-2")
+        field(PINI,"YES")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.PowerConsumption")
+}
+record(longin,"REC:rdSetTemp"){
+        field(DTYP,"OPCUA")
+#        field(SCAN,"1 second")
+        field(PINI,"YES")
+        field(SCAN,"I/O Intr")
+        field(DISS,"INVALID")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.TemperatureSetPoint")
+}
+record(ao,"REC:setTemp"){
+#        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(OUT,"@3:BuildingAutomation.AirConditioner_1.TemperatureSetPoint")
+}
+record(longout,"REC:setTempInt"){
+#        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(OUT,"@3:BuildingAutomation.AirConditioner_1.TemperatureSetPoint")
+}
+record(mbbiDirect,"REC:rdBit23"){
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+#        field(SCAN,"5 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.TemperatureSetPoint")
+        field(NOBT,"2")
+        field(SHFT,"2")
+}
+record(mbbi,"REC:stBit23"){
+#        field(SCAN,"5 second")
+        field(SCAN,"I/O Intr")
+        field(PINI,"YES")
+        field(TSE, "-2")
+        field(DTYP,"OPCUA")
+        field(INP,"@3:BuildingAutomation.AirConditioner_1.TemperatureSetPoint")
+        field(NOBT,"2")
+        field(SHFT,"1")
+        field(ZRVL,"0")
+        field(ONVL,"1")
+        field(TWVL,"2")
+        field(THVL,"3")
+        field(ZRST,"NULL")
+        field(ONST,"EINS")
+        field(TWST,"ZWEI")
+        field(THST,"DREI")
+}
