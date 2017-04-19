@@ -3,7 +3,7 @@ include $(TOP)/configure/CONFIG
 #----------------------------------------
 #  ADD MACRO DEFINITIONS AFTER THIS LINE
 
-DB = testServer.db freeopcuaTEST.db OPCUA_RECORD.db
+DB = testServer.db freeopcuaTEST.db HPFR1H1RF.db #OPCUA_RECORD.db
 
 IOCS += OPCUAIOC
 
@@ -39,6 +39,7 @@ OPCUAIOC_LIBS += $(UASDK_LIBS)
 OPCUAIOC_LIBS += $(EPICS_BASE_IOC_LIBS)
 
 OPCUAIOC_SYS_LIBS_Linux += xml2 crypto
+OPCUAIOC_SYS_LIBS += boost_regex
 
 USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/libxml2/out32dll
 USR_LDFLAGS_WIN32 += /LIBPATH:$(UASDK)/third-party/win32/vs2010sp1/openssl/out32dll 

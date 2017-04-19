@@ -9,6 +9,7 @@ PROD_SRCS = clientMain.cpp
 PROD_LIBS += opcUa
 PROD_LIBS += $(UASDK_LIBS)
 PROD_LIBS += $(EPICS_BASE_IOC_LIBS)
+PROD_SYS_LIBS += boost_regex
 
 ifeq ($(UASDK_USE_XMLPARSER),YES)
 PROD_SYS_LIBS_Linux += xml2

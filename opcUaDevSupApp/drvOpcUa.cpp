@@ -22,7 +22,11 @@
 #include <boost/algorithm/string.hpp>
 #include <string>
 #include <vector>
-#include <regex>
+
+// regex and stoi for lexical_cast are available as std functions in C11
+//#include <regex> 
+#include <boost/regex.hpp>
+#include <boost/lexical_cast.hpp>
 
 // EPICS LIBS
 #define epicsTypesGLOBAL
@@ -403,9 +407,8 @@ long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &I
     UaRelativePathElements  pathElements;
     std::vector<std::string> devpath;
     std::ostringstream ss;
-    std::regex rex;
-    std::smatch matches;
-
+    boost::regex rex;
+    boost::cmatch matches;
     ss <<"([0-9]+)"<< isNameSpaceDelim <<"(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
 
@@ -418,7 +421,7 @@ long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &I
     for(OpcUa_UInt32 i=0; i<devpath.size(); i++) {
         std::string partPath;
         std::string nsStr;
-        if (! std::regex_match(devpath[i], matches, rex) || (matches.size() != 3)) {
+        if (! boost::regex_match(devpath[i].c_str(), matches, rex) || (matches.size() != 4)) {
             partPath = devpath[i];
             errlogPrintf("      p='%s'\n",partPath.c_str());
         }
@@ -476,8 +479,8 @@ long DevUaClient::getNodes()
     UaBrowsePaths           browsePaths;
 
     std::ostringstream ss;
-    std::regex rex;
-    std::smatch matches;
+    boost::regex rex;
+    boost::cmatch matches;
 
     ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isBrowsePathDelim<<"])(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
@@ -489,7 +492,7 @@ long DevUaClient::getNodes()
         std::string ItemPath = pOPCUA_ItemINFO->ItemPath;
         int  ns;    // namespace
         UaNodeId    tempNode;
-        if (! std::regex_match(ItemPath, matches, rex) || (matches.size() != 4)) {
+        if (! boost::regex_match( pOPCUA_ItemINFO->ItemPath, matches, rex) || (matches.size() != 4)) {
             errlogPrintf("%s getNodes() SKIP for bad link. Can't parse '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
             ret=1;
             continue;
@@ -499,13 +502,13 @@ long DevUaClient::getNodes()
 
         int isStr=0;
         try {
-            ns = stoi(matches[1]);
+            ns = boost::lexical_cast<int>(matches[1]);
         }
-        catch (const std::invalid_argument& ia) {
+        catch (const boost::bad_lexical_cast &exc) {
             isStr=1;
         }
         if( isStr ) {      // later versions: string tag to specify a subscription group
-            errlogPrintf("%s getNodes() SKIP for bad link illegal namespace tag of string type in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+            errlogPrintf("%s getNodes() SKIP for bad link. Illegal string type namespace tag in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
             ret=1;
             continue;
         }
@@ -513,7 +516,7 @@ long DevUaClient::getNodes()
         //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",pOPCUA_ItemINFO->prec->name,ns,delim,path.c_str());
         if(delim == isBrowsePathDelim) {
             if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
-                if(debug) errlogPrintf("%s SKIP for bad link: illegal namespace in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal namespace in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
                 ret = 1;
                 continue;
             }
@@ -780,7 +783,7 @@ void print_OpcUa_DataValue(_OpcUa_DataValue *d)
 
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo)
 {
-    OpcUa_UInt32 i;
+    int i;
     if(val.isArray()) {
         for(i=0;i<val.arraySize();i++) {
             if(UaVariant(val[i]).type() < OpcUaType_String)
