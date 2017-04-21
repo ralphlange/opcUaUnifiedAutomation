@@ -734,7 +734,24 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
         }
 
         switch(dataType){
-        case epicsInt32T:
+        case epicsInt8T:
+        case epicsUInt8T:
+            val.toByte(*((epicsUInt8*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsInt32 recVal: %d '%c'\n",*((epicsUInt8*)toRec),*((epicsUInt8*)toRec));
+            break;
+        case epicsInt16T:
+            val.toInt16(*((epicsInt16*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt16*)toRec));
+            break;
+        case epicsEnum16T:
+        case epicsUInt16T:
+            val.toUInt16( *((epicsUInt16*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsInt32 recVal: %u\n",*((epicsUInt16*)toRec));
+            break;
+         case epicsInt32T:
             val.toInt32( *((epicsInt32*)toRec));
             if(debug >= 3)
                     errlogPrintf("\tepicsInt32 recVal: %d\n",*((epicsInt32*)toRec));
@@ -743,6 +760,11 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
             val.toUInt32( *((epicsUInt32*)toRec));
             if(debug >= 3)
                     errlogPrintf("\tepicsUInt32 recVal: %u\n",*((epicsUInt32*)toRec));
+            break;
+        case epicsFloat32T:
+            val.toFloat( *((epicsFloat32*)toRec));
+            if(debug >= 3)
+                    errlogPrintf("\tepicsFloat32 recVal: %f\n",*((epicsFloat32*)toRec));
             break;
         case epicsFloat64T:
             val.toDouble( *((epicsFloat64*)toRec));
