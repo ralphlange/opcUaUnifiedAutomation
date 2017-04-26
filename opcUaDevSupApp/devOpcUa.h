@@ -39,30 +39,29 @@ typedef struct OPCUA_Item {
     char ItemPath[ITEMPATHLEN];
 
     int itemDataType;       /* OPCUA Datatype */
-    epicsType recDataType;  /* Data type of the records VAL/RVAL field */
-    epicsType inpDataType;  /* OUT records: the type of the records input = VAL field - may differ from RVAL type!. INP records = NULL */
     int itemIdx;            /* Index of this item in UaNodeId vector */
 
     epicsAnyVal varVal;     /* buffer to hold the value got from Opc for all scalar values, including string   */
+
     void *pRecVal;          /* point to records val/rval/oval field */
+    epicsType recDataType;  /* Data type of the records VAL/RVAL field */
+
     void *pInpVal;          /* Input field to set OUT-records by the opcUa server */
+    epicsType inpDataType;  /* OUT records: the type of the records input = VAL field - may differ from RVAL type!. INP records = NULL */
 
     epicsMutexId flagLock;  /* mutex for lock flag access */
-    int isCallback;         /* is IN-record with SCAN=IOINTR or any type of OUT record*/
 
     int isArray;
     int arraySize;
 
-    int debug;              // debug level
+    int debug;              // debug level of this item, defined in field REC:TPRO
     int stat;               /* Status of the opc connection */
-    int noOut;              /* flag for OUT-records: prevent write back of incomming values */
+    int flagSuppressWrite;  /* flag for OUT-records: prevent write back of incomming values */
 
     IOSCANPVT ioscanpvt;    /* in-records scan request.*/
     CALLBACK callback;      /* out-records callback request.*/
 
     dbCommon *prec;
-    struct OPCUA_Item *next;/* It depends on the used opcUa library if the OPCUA_Items are organized as list or as vector. */
-
 } OPCUA_ItemINFO;
 
 #ifdef __cplusplus

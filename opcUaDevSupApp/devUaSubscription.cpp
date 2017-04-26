@@ -59,70 +59,70 @@ void DevUaSubscription::dataChange(
     for ( i=0; i<dataNotifications.length(); i++ )
     {
         struct dataChangeError {};
-        OPCUA_ItemINFO* pOPCUA_ItemINFO = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
+        OPCUA_ItemINFO* uaItem = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
         if(debug>3)
-            errlogPrintf("\t%s\n",pOPCUA_ItemINFO->prec->name);
-        else if(pOPCUA_ItemINFO->debug >= 2)
-            errlogPrintf("dataChange: %s %s\n",timeBuf,pOPCUA_ItemINFO->prec->name);
-        epicsMutexLock(pOPCUA_ItemINFO->flagLock);
+            errlogPrintf("\t%s\n",uaItem->prec->name);
+        else if(uaItem->debug >= 2)
+            errlogPrintf("dataChange: %s %s\n",timeBuf,uaItem->prec->name);
+        epicsMutexLock(uaItem->flagLock);
         try {
             if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
             {
-                if(debug) errlogPrintf("%s %s dataChange FAILED with status %s, Handle=%d\n",timeBuf,pOPCUA_ItemINFO->prec->name,
+                if(debug) errlogPrintf("%s %s dataChange FAILED with status %s, Handle=%d\n",timeBuf,uaItem->prec->name,
                        UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8(),dataNotifications[i].ClientHandle);
                 throw dataChangeError();
             }
-            pOPCUA_ItemINFO->stat = 0;
+            uaItem->stat = 0;
             UaVariant val = dataNotifications[i].Value.Value;
-            if(setRecVal(val,pOPCUA_ItemINFO,maxDebug(debug,pOPCUA_ItemINFO->debug))) {
-                if(debug) errlogPrintf("%s %s dataChange FAILED: setRecVal()\n",timeBuf,pOPCUA_ItemINFO->prec->name);
+            if(setRecVal(val,uaItem,maxDebug(debug,uaItem->debug))) {
+                if(debug) errlogPrintf("%s %s dataChange FAILED: setRecVal()\n",timeBuf,uaItem->prec->name);
                 throw dataChangeError();
             }
-            if(pOPCUA_ItemINFO->inpDataType) { // is OUT Record
-                if(pOPCUA_ItemINFO->debug >= 2) errlogPrintf("dataChange %s\tOUT rec noOut:%d\n", pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO->noOut);
-                if(pOPCUA_ItemINFO->noOut==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
-                    pOPCUA_ItemINFO->noOut = 1;
-                    callbackRequest(&(pOPCUA_ItemINFO->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
+            if(uaItem->inpDataType) { // is OUT Record
+                if(uaItem->debug >= 2) errlogPrintf("dataChange %s\tOUT rec flagSuppressWrite:%d\n", uaItem->prec->name,uaItem->flagSuppressWrite);
+                if(uaItem->flagSuppressWrite==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
+                    uaItem->flagSuppressWrite = 1;
+                    callbackRequest(&(uaItem->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
                 }
                 else {  // Means dataChange after write operation of the record. Ignore this, no callback, suppress another processing of the record
-                    pOPCUA_ItemINFO->noOut=0;
+                    uaItem->flagSuppressWrite=0;
                 }
             }
             else { // is IN Record
-                if(pOPCUA_ItemINFO->prec->scan == SCAN_IO_EVENT)
+                if(uaItem->prec->scan == SCAN_IO_EVENT)
                 {
-                    scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
+                    scanIoRequest( uaItem->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
                 }
 
             }
         }
         catch(dataChangeError) {
-            pOPCUA_ItemINFO->stat = 1;
+            uaItem->stat = 1;
         }
         // I'm not shure about the posibility of another exception but of the damage it could do!
         catch(...) {
-            pOPCUA_ItemINFO->stat = 1;
-            if(debug || (pOPCUA_ItemINFO->debug>= 2)) errlogPrintf("%s %s\tdataChange: unexpected exception '%s'\n",timeBuf,pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
-            pOPCUA_ItemINFO->debug = 4;
+            uaItem->stat = 1;
+            if(debug || (uaItem->debug>= 2)) errlogPrintf("%s %s\tdataChange: unexpected exception '%s'\n",timeBuf,uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
+            uaItem->debug = 4;
         }
 
         // set Timestamp if specified by TSE field
         UaDateTime dt = UaDateTime(dataNotifications[i].Value.ServerTimestamp);
-        if(pOPCUA_ItemINFO->prec->tse == epicsTimeEventDeviceTime ) {
-            pOPCUA_ItemINFO->prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
-            pOPCUA_ItemINFO->prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+        if(uaItem->prec->tse == epicsTimeEventDeviceTime ) {
+            uaItem->prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+            uaItem->prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
         }
-        if(pOPCUA_ItemINFO->debug >= 4) {
-            errlogPrintf("server timestamp: %s, TSE:%d\n",dt.toString().toUtf8(),pOPCUA_ItemINFO->prec->tse);
+        if(uaItem->debug >= 4) {
+            errlogPrintf("server timestamp: %s, TSE:%d\n",dt.toString().toUtf8(),uaItem->prec->tse);
         }
-        epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
+        epicsMutexUnlock(uaItem->flagLock);
 
 
-        if(pOPCUA_ItemINFO->debug >= 4)
-            errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s noOut:%d\n",
-                         pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
-                    pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                    pOPCUA_ItemINFO->noOut);
+        if(uaItem->debug >= 4)
+            errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s flagSuppressWrite:%d\n",
+                         uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                    uaItem->flagSuppressWrite);
     } //end for
     return;
 }
@@ -238,9 +238,9 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
             else
             {
                 if(debug) {
-                    OPCUA_ItemINFO* pOPCUA_ItemINFO = m_vectorUaItemInfo->at(i);
+                    OPCUA_ItemINFO* uaItem = m_vectorUaItemInfo->at(i);
                     errlogPrintf("%4d %s DevUaSubscription::createMonitoredItems failed for node: %s - Status %s\n",
-                        i, pOPCUA_ItemINFO->prec->name,
+                        i, uaItem->prec->name,
                         UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8(),
                         UaStatus(createResults[i].StatusCode).toString().toUtf8());
                 }
