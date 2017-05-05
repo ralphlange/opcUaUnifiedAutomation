@@ -461,12 +461,12 @@ long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &I
  */
 long DevUaClient::getNodes()
 {
-    long                ret=0;
-    OpcUa_UInt32        i;
-    OpcUa_UInt32        nrOfItems = vUaItemInfo.size();
-    OpcUa_UInt32        nrOfBrowsePathItems=0;
-    std::vector<UaNodeId> vReadNodeIds;
-    std::vector<OpcUa_UInt32> IndexOfBrowsPathItemInvReadNodeIds;
+    long ret=0;
+    long isIdType = 1;  /* flag to make shure consistency of itemPath types id==1 or browsepath==0. First item defines type!  */
+    OpcUa_UInt32    i;
+    OpcUa_UInt32    nrOfItems = vUaItemInfo.size();
+    OpcUa_UInt32    nrOfBrowsePathItems=0;
+    std::vector<UaNodeId>     vReadNodeIds;
     char delim;
     char isNodeIdDelim = ',';
     char isBrowsePathDelim = ':';
@@ -515,16 +515,25 @@ long DevUaClient::getNodes()
 
         //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",uaItem->prec->name,ns,delim,path.c_str());
         if(delim == isBrowsePathDelim) {
-            if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
+            if(!i)
+                isIdType = 0;
+            else if (isIdType != 0){    // browsepath not allowed if it is ID
+                 ret = 1;
+                continue;
+           }
+           if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
                 if(debug) errlogPrintf("%s SKIP for bad link: Illegal namespace in '%s'\n",uaItem->prec->name,ItemPath.c_str());
                 ret = 1;
                 continue;
             }
             nrOfBrowsePathItems++;
-            IndexOfBrowsPathItemInvReadNodeIds.push_back(i);
         }
         else if(delim == isNodeIdDelim) {
-            // test identifier for number
+            if (isIdType != 1){    // ID not allowed if it is browsepath
+                ret = 1;
+                continue;
+            }
+           // test identifier for number
             OpcUa_UInt32 itemId;
             char         *endptr;
 
