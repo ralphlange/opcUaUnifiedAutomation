@@ -139,7 +139,7 @@ public:
 
     void addOPCUA_Item(OPCUA_ItemINFO *h);
     long getNodes();
-    long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char nameSpaceDelim);
+    long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter);
     UaStatus createMonitoredItems();
 
     UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos);
@@ -402,40 +402,39 @@ void split(std::vector<std::string> &sOut,std::string &str, const char delimiter
     return;
 }
 
-long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char isNameSpaceDelim)
+long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter)
 {
     UaRelativePathElements  pathElements;
     std::vector<std::string> devpath;
     std::ostringstream ss;
     boost::regex rex;
     boost::cmatch matches;
-    ss <<"([0-9]+)"<< isNameSpaceDelim <<"(.*)";
+    ss <<"([0-9]+)"<< nameSpaceDelim <<"(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
 
     browsePaths.StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
 
-    split(devpath,ItemPath,browsePathDelim);
+    split(devpath,ItemPath,pathDelimiter);
     pathElements.create(devpath.size());
-
+    
     OpcUa_UInt16    nsIdx=0;
     for(OpcUa_UInt32 i=0; i<devpath.size(); i++) {
-        std::string partPath;
+        std::string partPath = devpath[i];
         std::string nsStr;
-        if (! boost::regex_match(devpath[i].c_str(), matches, rex) || (matches.size() != 4)) {
-            partPath = devpath[i];
-            errlogPrintf("      p='%s'\n",partPath.c_str());
+        if (! boost::regex_match(partPath.c_str(), matches, rex) || (matches.size() != 3)) {
+            if(!nsIdx)    // first element must set namespace!
+                return 1;
+            //errlogPrintf("      p='%s'\n",partPath.c_str());
         }
         else {
             char         *endptr;
             nsStr = matches[1];
             partPath = matches[2];
             nsIdx = strtol(nsStr.c_str(),&endptr,10); // regexp guarantees number
-            errlogPrintf("  n=%d,p='%s'\n",nsIdx,partPath.c_str());
+            //errlogPrintf("  n=%d,p='%s'\n",nsIdx,partPath.c_str());
             if(nsIdx == 0)     // namespace of 0 is illegal!
                 return 1;
         }
-        if(!i && !nsIdx)    // first element must set namespace!
-            return 1;
         pathElements[i].IncludeSubtypes = OpcUa_True;
         pathElements[i].IsInverse       = OpcUa_False;
         pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
@@ -469,7 +468,6 @@ long DevUaClient::getNodes()
     std::vector<UaNodeId>     vReadNodeIds;
     char delim;
     char isNodeIdDelim = ',';
-    char isBrowsePathDelim = ':';
     char isNameSpaceDelim = ':';
     char pathDelim = '.';
     UaStatus status;
@@ -482,7 +480,7 @@ long DevUaClient::getNodes()
     boost::regex rex;
     boost::cmatch matches;
 
-    ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isBrowsePathDelim<<"])(.*)";
+    ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isNameSpaceDelim<<"])(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
     vUaNodeId.clear();
 
@@ -514,22 +512,24 @@ long DevUaClient::getNodes()
         }
 
         //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",uaItem->prec->name,ns,delim,path.c_str());
-        if(delim == isBrowsePathDelim) {
-            if(!i)
+        if(delim == isNameSpaceDelim) {
+            if(!i)  // set for first element
                 isIdType = 0;
-            else if (isIdType != 0){    // browsepath not allowed if it is ID
-                 ret = 1;
+            if (isIdType != 0){
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal Browsepath link in ID links\n",uaItem->prec->name);
+                ret = 1;
                 continue;
-           }
-           if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
-                if(debug) errlogPrintf("%s SKIP for bad link: Illegal namespace in '%s'\n",uaItem->prec->name,ItemPath.c_str());
+            }
+           if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,isNameSpaceDelim,pathDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal or Missing namespace in '%s'\n",uaItem->prec->name,ItemPath.c_str());
                 ret = 1;
                 continue;
             }
             nrOfBrowsePathItems++;
         }
         else if(delim == isNodeIdDelim) {
-            if (isIdType != 1){    // ID not allowed if it is browsepath
+            if (isIdType != 1){
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal ID link in Browsepath links\n",uaItem->prec->name);
                 ret = 1;
                 continue;
             }
@@ -558,7 +558,6 @@ long DevUaClient::getNodes()
         return ret;
 
     if(nrOfBrowsePathItems) {
-        errlogPrintf("nrOfBrowsePathItems=%d\n",nrOfBrowsePathItems);
         browsePaths.resize(nrOfBrowsePathItems);
         status = m_pSession->translateBrowsePathsToNodeIds(
             serviceSettings, // Use default settings
@@ -566,7 +565,7 @@ long DevUaClient::getNodes()
             browsePathResults,
             diagnosticInfos);
 
-        errlogPrintf("translateBrowsePathsToNodeIds stat=%d (%s). nrOfItems:%d\n",status.statusCode(),status.toString().toUtf8(),browsePathResults.length());
+        if(debug>=2) errlogPrintf("translateBrowsePathsToNodeIds stat=%d (%s). nrOfItems:%d\n",status.statusCode(),status.toString().toUtf8(),browsePathResults.length());
         for(i=0; i<browsePathResults.length(); i++) {
             UaNodeId tempNode;
             if ( OpcUa_IsGood(browsePathResults[i].StatusCode) ) {
@@ -577,7 +576,7 @@ long DevUaClient::getNodes()
                 tempNode = UaNodeId();
                 vUaNodeId.push_back(tempNode);
             }
-            errlogPrintf("Node: idx=%d node=%s\n",i,tempNode.toString().toUtf8());
+            if(debug>=2) errlogPrintf("Node: idx=%d node=%s\n",i,tempNode.toString().toUtf8());
         }
 
     }
