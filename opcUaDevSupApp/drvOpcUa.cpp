@@ -139,7 +139,7 @@ public:
 
     void addOPCUA_Item(OPCUA_ItemINFO *h);
     long getNodes();
-    long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char nameSpaceDelim);
+    long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter);
     UaStatus createMonitoredItems();
 
     UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos);
@@ -293,21 +293,21 @@ void DevUaClient::connectionStatusChanged(
     serverConnectionStatus = serverStatus;
 }
 
-// Set pOPCUA_ItemINFO->stat = 1 if connectionStatusChanged() to bad connection
+// Set uaItem->stat = 1 if connectionStatusChanged() to bad connection
 void DevUaClient::setBadQuality()
 {
     epicsTimeStamp	 now;
     epicsTimeGetCurrent(&now);
 
     for(OpcUa_UInt32 bpItem=0;bpItem<vUaItemInfo.size();bpItem++) {
-        OPCUA_ItemINFO *pOPCUA_ItemINFO = vUaItemInfo[bpItem];
-        pOPCUA_ItemINFO->prec->time = now;
-        pOPCUA_ItemINFO->noOut = 1;
-        pOPCUA_ItemINFO->stat = 1;
-        if(pOPCUA_ItemINFO->inpDataType) // is OUT Record
-            callbackRequest(&(pOPCUA_ItemINFO->callback));
+        OPCUA_ItemINFO *uaItem = vUaItemInfo[bpItem];
+        uaItem->prec->time = now;
+        uaItem->flagSuppressWrite = 1;
+        uaItem->stat = 1;
+        if(uaItem->inpDataType) // is OUT Record
+            callbackRequest(&(uaItem->callback));
         else
-            scanIoRequest( pOPCUA_ItemINFO->ioscanpvt );
+            scanIoRequest( uaItem->ioscanpvt );
     }
 }
 
@@ -401,40 +401,39 @@ void split(std::vector<std::string> &sOut,std::string &str, const char delimiter
     return;
 }
 
-long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char browsePathDelim,const char isNameSpaceDelim)
+long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter)
 {
     UaRelativePathElements  pathElements;
     std::vector<std::string> devpath;
     std::ostringstream ss;
     boost::regex rex;
     boost::cmatch matches;
-    ss <<"([0-9]+)"<< isNameSpaceDelim <<"(.*)";
+    ss <<"([0-9]+)"<< nameSpaceDelim <<"(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
 
     browsePaths.StartingNode.Identifier.Numeric = OpcUaId_ObjectsFolder;
 
-    split(devpath,ItemPath,browsePathDelim);
+    split(devpath,ItemPath,pathDelimiter);
     pathElements.create(devpath.size());
-
+    
     OpcUa_UInt16    nsIdx=0;
     for(OpcUa_UInt32 i=0; i<devpath.size(); i++) {
-        std::string partPath;
+        std::string partPath = devpath[i];
         std::string nsStr;
-        if (! boost::regex_match(devpath[i].c_str(), matches, rex) || (matches.size() != 4)) {
-            partPath = devpath[i];
-            errlogPrintf("      p='%s'\n",partPath.c_str());
+        if (! boost::regex_match(partPath.c_str(), matches, rex) || (matches.size() != 3)) {
+            if(!nsIdx)    // first element must set namespace!
+                return 1;
+            //errlogPrintf("      p='%s'\n",partPath.c_str());
         }
         else {
             char         *endptr;
             nsStr = matches[1];
             partPath = matches[2];
             nsIdx = strtol(nsStr.c_str(),&endptr,10); // regexp guarantees number
-            errlogPrintf("  n=%d,p='%s'\n",nsIdx,partPath.c_str());
+            //errlogPrintf("  n=%d,p='%s'\n",nsIdx,partPath.c_str());
             if(nsIdx == 0)     // namespace of 0 is illegal!
                 return 1;
         }
-        if(!i && !nsIdx)    // first element must set namespace!
-            return 1;
         pathElements[i].IncludeSubtypes = OpcUa_True;
         pathElements[i].IsInverse       = OpcUa_False;
         pathElements[i].ReferenceTypeId.Identifier.Numeric = OpcUaId_HierarchicalReferences;
@@ -446,7 +445,7 @@ long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &I
     return 0;
 }
 
-/* clear vUaNodeId and recreate all nodes from pOPCUA_ItemINFO->ItemPath data.
+/* clear vUaNodeId and recreate all nodes from uaItem->ItemPath data.
  *    vUaItemInfo:  input link is either
  *    NODE_ID    or      BROWSEPATH
  *       |                   |
@@ -460,15 +459,14 @@ long DevUaClient::getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &I
  */
 long DevUaClient::getNodes()
 {
-    long                ret=0;
-    OpcUa_UInt32        i;
-    OpcUa_UInt32        nrOfItems = vUaItemInfo.size();
-    OpcUa_UInt32        nrOfBrowsePathItems=0;
-    std::vector<UaNodeId> vReadNodeIds;
-    std::vector<OpcUa_UInt32> IndexOfBrowsPathItemInvReadNodeIds;
+    long ret=0;
+    long isIdType = 1;  /* flag to make shure consistency of itemPath types id==1 or browsepath==0. First item defines type!  */
+    OpcUa_UInt32    i;
+    OpcUa_UInt32    nrOfItems = vUaItemInfo.size();
+    OpcUa_UInt32    nrOfBrowsePathItems=0;
+    std::vector<UaNodeId>     vReadNodeIds;
     char delim;
     char isNodeIdDelim = ',';
-    char isBrowsePathDelim = ':';
     char isNameSpaceDelim = ':';
     char pathDelim = '.';
     UaStatus status;
@@ -481,18 +479,18 @@ long DevUaClient::getNodes()
     boost::regex rex;
     boost::cmatch matches;
 
-    ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isBrowsePathDelim<<"])(.*)";
+    ss <<"([a-z0-9_-]+)(["<< isNodeIdDelim << isNameSpaceDelim<<"])(.*)";
     rex = ss.str();  // ="([a-z0-9_-]+)([,:])(.*)";
     vUaNodeId.clear();
 
     browsePaths.create(nrOfItems);
     for(i=0;i<nrOfItems;i++) {
-        OPCUA_ItemINFO        *pOPCUA_ItemINFO = vUaItemInfo[i];
-        std::string ItemPath = pOPCUA_ItemINFO->ItemPath;
+        OPCUA_ItemINFO        *uaItem = vUaItemInfo[i];
+        std::string ItemPath = uaItem->ItemPath;
         int  ns;    // namespace
         UaNodeId    tempNode;
-        if (! boost::regex_match( pOPCUA_ItemINFO->ItemPath, matches, rex) || (matches.size() != 4)) {
-            errlogPrintf("%s getNodes() SKIP for bad link. Can't parse '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+        if (! boost::regex_match( uaItem->ItemPath, matches, rex) || (matches.size() != 4)) {
+            errlogPrintf("%s getNodes() SKIP for bad link. Can't parse '%s'\n",uaItem->prec->name,ItemPath.c_str());
             ret=1;
             continue;
         }
@@ -507,23 +505,34 @@ long DevUaClient::getNodes()
             isStr=1;
         }
         if( isStr ) {      // later versions: string tag to specify a subscription group
-            errlogPrintf("%s getNodes() SKIP for bad link. Illegal string type namespace tag in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+            errlogPrintf("%s getNodes() SKIP for bad link. Illegal string type namespace tag in '%s'\n",uaItem->prec->name,ItemPath.c_str());
             ret=1;
             continue;
         }
 
-        //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",pOPCUA_ItemINFO->prec->name,ns,delim,path.c_str());
-        if(delim == isBrowsePathDelim) {
-            if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,pathDelim,isNameSpaceDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
-                if(debug) errlogPrintf("%s SKIP for bad link: Illegal namespace in '%s'\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+        //errlogPrintf("%20s:ns=%d, delim='%c', path='%s'\n",uaItem->prec->name,ns,delim,path.c_str());
+        if(delim == isNameSpaceDelim) {
+            if(!i)  // set for first element
+                isIdType = 0;
+            if (isIdType != 0){
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal Browsepath link in ID links\n",uaItem->prec->name);
+                ret = 1;
+                continue;
+            }
+           if(getBrowsePathItem( browsePaths[nrOfBrowsePathItems],ItemPath,isNameSpaceDelim,pathDelim)){  // ItemPath: 'namespace:path' may include other namespaces within the path
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal or Missing namespace in '%s'\n",uaItem->prec->name,ItemPath.c_str());
                 ret = 1;
                 continue;
             }
             nrOfBrowsePathItems++;
-            IndexOfBrowsPathItemInvReadNodeIds.push_back(i);
         }
         else if(delim == isNodeIdDelim) {
-            // test identifier for number
+            if (isIdType != 1){
+                if(debug) errlogPrintf("%s SKIP for bad link: Illegal ID link in Browsepath links\n",uaItem->prec->name);
+                ret = 1;
+                continue;
+            }
+           // test identifier for number
             OpcUa_UInt32 itemId;
             char         *endptr;
 
@@ -534,12 +543,12 @@ long DevUaClient::getNodes()
             else {                 // string id
                 tempNode.setNodeId(UaString(path.c_str()), ns);
             }
-            if(debug>2) errlogPrintf("%3u %s\tNODE: '%s'\n",i,pOPCUA_ItemINFO->prec->name,tempNode.toString().toUtf8());
+            if(debug>2) errlogPrintf("%3u %s\tNODE: '%s'\n",i,uaItem->prec->name,tempNode.toString().toUtf8());
             vUaNodeId.push_back(tempNode);
             vReadNodeIds.push_back(tempNode);
         }
         else {
-            errlogPrintf("%s SKIP for bad link: '%s' unknown delimiter\n",pOPCUA_ItemINFO->prec->name,ItemPath.c_str());
+            errlogPrintf("%s SKIP for bad link: '%s' unknown delimiter\n",uaItem->prec->name,ItemPath.c_str());
             ret = 1;
             continue;
         }
@@ -548,7 +557,6 @@ long DevUaClient::getNodes()
         return ret;
 
     if(nrOfBrowsePathItems) {
-        errlogPrintf("nrOfBrowsePathItems=%d\n",nrOfBrowsePathItems);
         browsePaths.resize(nrOfBrowsePathItems);
         status = m_pSession->translateBrowsePathsToNodeIds(
             serviceSettings, // Use default settings
@@ -556,7 +564,7 @@ long DevUaClient::getNodes()
             browsePathResults,
             diagnosticInfos);
 
-        errlogPrintf("translateBrowsePathsToNodeIds stat=%d (%s). nrOfItems:%d\n",status.statusCode(),status.toString().toUtf8(),browsePathResults.length());
+        if(debug>=2) errlogPrintf("translateBrowsePathsToNodeIds stat=%d (%s). nrOfItems:%d\n",status.statusCode(),status.toString().toUtf8(),browsePathResults.length());
         for(i=0; i<browsePathResults.length(); i++) {
             UaNodeId tempNode;
             if ( OpcUa_IsGood(browsePathResults[i].StatusCode) ) {
@@ -567,7 +575,7 @@ long DevUaClient::getNodes()
                 tempNode = UaNodeId();
                 vUaNodeId.push_back(tempNode);
             }
-            errlogPrintf("Node: idx=%d node=%s\n",i,tempNode.toString().toUtf8());
+            if(debug>=2) errlogPrintf("Node: idx=%d node=%s\n",i,tempNode.toString().toUtf8());
         }
 
     }
@@ -644,12 +652,12 @@ void DevUaClient::itemStat(int verb)
         if(verb==1) errlogPrintf("Only bad signals\n");
         errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
         for(unsigned int i=0;i< vUaItemInfo.size();i++) {
-            OPCUA_ItemINFO* pOPCUA_ItemINFO = vUaItemInfo[i];
-            if((verb>1) || ((verb==1)&&(pOPCUA_ItemINFO->stat==1)))  // verb=1 only the bad, verb>1 all
-                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,
-                   pOPCUA_ItemINFO->recDataType,epicsTypeNames[pOPCUA_ItemINFO->recDataType],
-                   pOPCUA_ItemINFO->itemDataType,variantTypeStrings(pOPCUA_ItemINFO->itemDataType),
-                   pOPCUA_ItemINFO->stat,pOPCUA_ItemINFO->ItemPath );
+            OPCUA_ItemINFO* uaItem = vUaItemInfo[i];
+            if((verb>1) || ((verb==1)&&(uaItem->stat==1)))  // verb=1 only the bad, verb>1 all
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",uaItem->itemIdx,uaItem->prec->name,
+                   uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                   uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                   uaItem->stat,uaItem->ItemPath );
         }
     }
 }
@@ -664,8 +672,8 @@ inline int maxDebug(int dbg,int recDbg) {
 }
 epicsRegisterFunction(maxDebug);
 
-/* write variant value from opcua read or callback to - whatever is determined in pOPCUA_ItemINFO*/
-long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
+/* write variant value from opcua read or callback to - whatever is determined in uaItem*/
+long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem,int debug)
 {
     if(val.isArray()){
         UaByteArray   aByte;
@@ -676,45 +684,45 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
         UaFloatArray  aFloat;
         UaDoubleArray aDouble;
 
-        if(val.arraySize() <= pOPCUA_ItemINFO->arraySize) {
-            switch(pOPCUA_ItemINFO->recDataType) {
+        if(val.arraySize() <= uaItem->arraySize) {
+            switch(uaItem->recDataType) {
             case epicsInt8T:
             case epicsUInt8T:
                 val.toByteArray( aByte);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aByte.data(),sizeof(epicsInt8)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aByte.data(),sizeof(epicsInt8)*uaItem->arraySize);
                 break;
             case epicsInt16T:
                 val.toInt16Array( aInt16);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aInt16.rawData(),sizeof(epicsInt16)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aInt16.rawData(),sizeof(epicsInt16)*uaItem->arraySize);
                 break;
             case epicsEnum16T:
             case epicsUInt16T:
                 val.toUInt16Array( aUInt16);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aUInt16.rawData(),sizeof(epicsUInt16)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aUInt16.rawData(),sizeof(epicsUInt16)*uaItem->arraySize);
                 break;
             case epicsInt32T:
                 val.toInt32Array( aInt32);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aInt32.rawData(),sizeof(epicsInt32)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aInt32.rawData(),sizeof(epicsInt32)*uaItem->arraySize);
                 break;
             case epicsUInt32T:
                 val.toUInt32Array( aUInt32);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aUInt32.rawData(),sizeof(epicsUInt32)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aUInt32.rawData(),sizeof(epicsUInt32)*uaItem->arraySize);
                 break;
             case epicsFloat32T:
                 val.toFloatArray( aFloat);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aFloat.rawData(),sizeof(epicsFloat32)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aFloat.rawData(),sizeof(epicsFloat32)*uaItem->arraySize);
                 break;
             case epicsFloat64T:
                 val.toDoubleArray( aDouble);
-                memcpy(pOPCUA_ItemINFO->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*pOPCUA_ItemINFO->arraySize);
+                memcpy(uaItem->pRecVal,aDouble.rawData(),sizeof(epicsFloat64)*uaItem->arraySize);
                 break;
             default:
-                if(debug >= 2) errlogPrintf("%s setRecVal(): Can't convert array data type\n",pOPCUA_ItemINFO->prec->name);
+                if(debug >= 2) errlogPrintf("%s setRecVal(): Can't convert array data type\n",uaItem->prec->name);
                 return 1;
             }
         }
         else {
-            if(debug >= 2) errlogPrintf("%s setRecVal() Error record arraysize %d < OpcItem Size %d\n", pOPCUA_ItemINFO->prec->name,val.arraySize(),pOPCUA_ItemINFO->arraySize);
+            if(debug >= 2) errlogPrintf("%s setRecVal() Error record arraysize %d < OpcItem Size %d\n", uaItem->prec->name,val.arraySize(),uaItem->arraySize);
             return 1;
         }
     }      // end array
@@ -723,13 +731,13 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
                      // internal varVal to be set when processed: IN records.
         epicsType dataType;
 
-        if(pOPCUA_ItemINFO->inpDataType) {   // is OUT Record. TODO: what about records data conversion?
-            toRec = pOPCUA_ItemINFO->pInpVal;
-            dataType = pOPCUA_ItemINFO->inpDataType;
+        if(uaItem->inpDataType) {   // is OUT Record. TODO: what about records data conversion?
+            toRec = uaItem->pInpVal;
+            dataType = uaItem->inpDataType;
         }
         else {
-            toRec = &(pOPCUA_ItemINFO->varVal); // is IN Record
-            dataType = pOPCUA_ItemINFO->recDataType;
+            toRec = &(uaItem->varVal); // is IN Record
+            dataType = uaItem->recDataType;
         }
 
         switch(dataType){
@@ -777,7 +785,7 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug)
             break;
         default:
             if(debug>= 2)
-                    errlogPrintf("%s setRecVal() Error unsupported recDataType '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+                    errlogPrintf("%s setRecVal() Error unsupported recDataType '%s'\n",uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
             return 1;
         }
     }
@@ -845,7 +853,7 @@ long OpcReadValues(int verbose,int monitored)
     if (status.isGood()) {
         if(verbose) errlogPrintf("READ VALUES success: %i\n",values.length());
         for(OpcUa_UInt32 j=0;j<values.length();j++) {
-            OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[j];
+            OPCUA_ItemINFO* uaItem = pMyClient->vUaItemInfo[j];
 
             if (OpcUa_IsGood(values[j].StatusCode)) {
                 UaVariant val = values[j].Value;
@@ -858,23 +866,23 @@ long OpcReadValues(int verbose,int monitored)
                 }
                 else {
                     if(monitored) 
-                        pOPCUA_ItemINFO->debug=3;
-                    pOPCUA_ItemINFO->itemDataType = (int) values[j].Value.Datatype;
-                    switch((int)pOPCUA_ItemINFO->itemDataType){
-                    case OpcUaType_Boolean: pOPCUA_ItemINFO->recDataType = epicsInt8T;      break;
-                    case OpcUaType_SByte:   pOPCUA_ItemINFO->recDataType = epicsInt8T;      break;
-                    case OpcUaType_Byte:    pOPCUA_ItemINFO->recDataType = epicsUInt8T;     break;
-                    case OpcUaType_Int16:   pOPCUA_ItemINFO->recDataType = epicsInt16T;     break;
-                    case OpcUaType_UInt16:  pOPCUA_ItemINFO->recDataType = epicsUInt16T;    break;
-                    case OpcUaType_Int32:   pOPCUA_ItemINFO->recDataType = epicsInt32T;     break;
-                    case OpcUaType_UInt32:  pOPCUA_ItemINFO->recDataType = epicsUInt32T;    break;
-                    case OpcUaType_Float:   pOPCUA_ItemINFO->recDataType = epicsFloat32T;   break;
-                    case OpcUaType_Double:  pOPCUA_ItemINFO->recDataType = epicsFloat64T;   break;
-                    case OpcUaType_String:  pOPCUA_ItemINFO->recDataType = epicsOldStringT; break;
+                        uaItem->debug=3;
+                    uaItem->itemDataType = (int) values[j].Value.Datatype;
+                    switch((int)uaItem->itemDataType){
+                    case OpcUaType_Boolean: uaItem->recDataType = epicsInt8T;      break;
+                    case OpcUaType_SByte:   uaItem->recDataType = epicsInt8T;      break;
+                    case OpcUaType_Byte:    uaItem->recDataType = epicsUInt8T;     break;
+                    case OpcUaType_Int16:   uaItem->recDataType = epicsInt16T;     break;
+                    case OpcUaType_UInt16:  uaItem->recDataType = epicsUInt16T;    break;
+                    case OpcUaType_Int32:   uaItem->recDataType = epicsInt32T;     break;
+                    case OpcUaType_UInt32:  uaItem->recDataType = epicsUInt32T;    break;
+                    case OpcUaType_Float:   uaItem->recDataType = epicsFloat32T;   break;
+                    case OpcUaType_Double:  uaItem->recDataType = epicsFloat64T;   break;
+                    case OpcUaType_String:  uaItem->recDataType = epicsOldStringT; break;
                     default:
-                        errlogPrintf("OpcReadValues(): '%s' unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
+                        errlogPrintf("OpcReadValues(): '%s' unsupported opc data type: '%s'", uaItem->prec->name, variantTypeStrings(uaItem->itemDataType));
                     }
-                    setRecVal(val,pOPCUA_ItemINFO,4);
+                    setRecVal(val,uaItem,4);
                 }
             }
             else {
@@ -903,8 +911,8 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
     UaWriteValues nodesToWrite;       // Array of nodes to write
     UaStatusCodeArray   results;            // Returns an array of status codes
     UaDiagnosticInfos   diagnosticInfos;    // Returns an array of diagnostic info
-    OPCUA_ItemINFO* pOPCUA_ItemINFO;
-    pOPCUA_ItemINFO = (pMyClient->vUaItemInfo).at(opcUaItemIndex);
+    OPCUA_ItemINFO* uaItem;
+    uaItem = (pMyClient->vUaItemInfo).at(opcUaItemIndex);
 
     if(verbose){
         errlogPrintf("OpcWriteValue(%d,%f)\nTRANSLATEBROWSEPATH\n",opcUaItemIndex,val);
@@ -912,8 +920,8 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
     }
 
     nodesToWrite.create(1);
-//from OPCUA_ItemINFO:    UaNodeId temp1Node(pOPCUA_ItemINFO->ItemPath,pOPCUA_ItemINFO->NdIdx);
-    UaNodeId tempNode(pMyClient->vUaNodeId[pOPCUA_ItemINFO->itemIdx]);
+//from OPCUA_ItemINFO:    UaNodeId temp1Node(uaItem->ItemPath,uaItem->NdIdx);
+    UaNodeId tempNode(pMyClient->vUaNodeId[uaItem->itemIdx]);
     tempNode.copyTo(&nodesToWrite[0].NodeId);
     nodesToWrite[0].AttributeId = OpcUa_Attributes_Value;
     tempValue.setDouble(val);
@@ -934,7 +942,7 @@ long OpcWriteValue(int opcUaItemIndex,double val,int verbose)
 extern "C" {
 epicsRegisterFunction(OpcUaWriteItems);
 }
-long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
+long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
 {
     UaStatus            status=0;
     ServiceSettings     serviceSettings;    // Use default settings
@@ -944,21 +952,21 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
     UaDiagnosticInfos   diagnosticInfos;    // Returns an array of diagnostic info
 
     nodesToWrite.create(1);
-//from OPCUA_ItemINFO:    UaNodeId temp1Node(pOPCUA_ItemINFO->ItemPath,pOPCUA_ItemINFO->NdIdx);
-    UaNodeId tempNode(pMyClient->vUaNodeId[pOPCUA_ItemINFO->itemIdx]);
+//from OPCUA_ItemINFO:    UaNodeId temp1Node(uaItem->ItemPath,uaItem->NdIdx);
+    UaNodeId tempNode(pMyClient->vUaNodeId[uaItem->itemIdx]);
     tempNode.copyTo(&nodesToWrite[0].NodeId);
     nodesToWrite[0].AttributeId = OpcUa_Attributes_Value;
 
-    switch((int)pOPCUA_ItemINFO->itemDataType){
+    switch((int)uaItem->itemDataType){
     case OpcUaType_Boolean:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
         case epicsInt32T:
-        case epicsUInt32T:  if( 0 != *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal) )
+        case epicsUInt32T:  if( 0 != *((epicsInt32*)(uaItem)->pRecVal) )
                                 tempValue.setBool(true);
                             else
                                 tempValue.setBool(false);
                             break;
-        case epicsFloat64T:  if( *((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal) == 0.0 ) /* is this reasonable?? or better don't support double */
+        case epicsFloat64T:  if( *((epicsFloat64*)(uaItem)->pRecVal) == 0.0 ) /* is this reasonable?? or better don't support double */
                                 tempValue.setBool(false);
                             else
                                 tempValue.setBool(true);
@@ -969,79 +977,79 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
         break;
     case OpcUaType_SByte:
 
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Byte:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Int16:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_UInt16:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Int32:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_UInt32:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Float:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Double:
-        switch(pOPCUA_ItemINFO->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(pOPCUA_ItemINFO)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(pOPCUA_ItemINFO)->pRecVal));break;
+        switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_String:
-        if(pOPCUA_ItemINFO->recDataType == epicsOldStringT) { /* stringin/outRecord definition of 'char val[40]' */
-            tempValue.setString(UaString((char*)pOPCUA_ItemINFO->pRecVal));break;
+        if(uaItem->recDataType == epicsOldStringT) { /* stringin/outRecord definition of 'char val[40]' */
+            tempValue.setString(UaString((char*)uaItem->pRecVal));break;
         }
         break;
     default:
-        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", pOPCUA_ItemINFO->prec->name, variantTypeStrings(pOPCUA_ItemINFO->itemDataType));
+        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", uaItem->prec->name, variantTypeStrings(uaItem->itemDataType));
     }
     if((status==1) && pMyClient->getDebug()) {
-        errlogPrintf("%s\tOpcUaWriteItems: unsupported record data type: '%s'\n",pOPCUA_ItemINFO->prec->name,epicsTypeNames[pOPCUA_ItemINFO->recDataType]);
+        errlogPrintf("%s\tOpcUaWriteItems: unsupported record data type: '%s'\n",uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
         return 1;
     }
 
@@ -1050,13 +1058,13 @@ long OpcUaWriteItems(OPCUA_ItemINFO* pOPCUA_ItemINFO)
     status = pMyClient->writeFunc(serviceSettings,nodesToWrite,results,diagnosticInfos);
     if ( status.isBad()  )
     {
-        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",pOPCUA_ItemINFO->prec->name,status.toString().toUtf8());
+        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",uaItem->prec->name,status.toString().toUtf8());
         return 1;
     }
     return 0;
 }
 
-/* iocShell: Read and setup pOPCUA_ItemINFO Item data type, createMonitoredItems */
+/* iocShell: Read and setup uaItem Item data type, createMonitoredItems */
 extern "C" {
 epicsRegisterFunction(OpcUaSetupMonitors);
 }
@@ -1078,23 +1086,23 @@ long OpcUaSetupMonitors(void)
     }
     if(pMyClient->getDebug() > 1) errlogPrintf("OpcUaSetupMonitors READ of %d values returned ok\n", values.length());
     for(OpcUa_UInt32 i=0; i<values.length(); i++) {
-        OPCUA_ItemINFO* pOPCUA_ItemINFO = pMyClient->vUaItemInfo[i];
+        OPCUA_ItemINFO* uaItem = pMyClient->vUaItemInfo[i];
         if (OpcUa_IsBad(values[i].StatusCode)) {
-            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",pOPCUA_ItemINFO->itemIdx,
-                     pOPCUA_ItemINFO->prec->name, pOPCUA_ItemINFO->ItemPath,
+            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",uaItem->itemIdx,
+                     uaItem->prec->name, uaItem->ItemPath,
                      UaStatus(values[i].StatusCode).toString().toUtf8());
         }
         else {
-            if(values[i].Value.ArrayType && !pOPCUA_ItemINFO->isArray) {
-                 if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",pOPCUA_ItemINFO->prec->name);
+            if(values[i].Value.ArrayType && !uaItem->isArray) {
+                 if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",uaItem->prec->name);
             }
             else {
 
-                epicsMutexLock(pOPCUA_ItemINFO->flagLock);
-                pOPCUA_ItemINFO->itemDataType = (int) values[i].Value.Datatype;
-                pOPCUA_ItemINFO->isArray = 0;
-                epicsMutexUnlock(pOPCUA_ItemINFO->flagLock);
-                if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p noOut: %d\n",pOPCUA_ItemINFO->itemIdx,pOPCUA_ItemINFO->prec->name,pOPCUA_ItemINFO,pOPCUA_ItemINFO->noOut);
+                epicsMutexLock(uaItem->flagLock);
+                uaItem->itemDataType = (int) values[i].Value.Datatype;
+                uaItem->isArray = 0;
+                epicsMutexUnlock(uaItem->flagLock);
+                if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p flagSuppressWrite: %d\n",uaItem->itemIdx,uaItem->prec->name,uaItem,uaItem->flagSuppressWrite);
             }
         }
     }
