@@ -28,19 +28,21 @@ extern "C" {
 #endif
     typedef enum {BOTH=0,NODEID,BROWSEPATH,BROWSEPATH_CONCAT,GETNODEMODEMAX} GetNodeMode;
     const char *variantTypeStrings(int type);
+    extern char *getTime(char *buf);
     extern long opcUa_close(int verbose);
     extern long OpcUaSetupMonitors(void);
     extern long opcUa_io_report (int); /* Write IO report output to stdout. */
     extern void addOPCUA_Item(OPCUA_ItemINFO *h);
-    extern void signalHandler( int signum );
 // iocShell:
     extern long OpcUaWriteItems(OPCUA_ItemINFO* pOU_ItemINFO);
 // client:
     extern long OpcReadValues(int verbose,int monitored);
     extern long OpcWriteValue(int opcUaItemIndex,double val,int verbose);
+    extern int maxDebug(int dbg,int recDbg);
 #ifdef __cplusplus
 }
-    extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, GetNodeMode mode, int verbose);
+    extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* pOPCUA_ItemINFO,int debug);
+    extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int autoConn, int debug);
 #endif
 
 #endif /* ifndef __DRVOPCUA_H */

@@ -20,6 +20,15 @@ record(longout,"REC:setPropINT"){
         field(HOPR,"100")
         
 }
+record(ai,"REC:rdProp"){
+#        field(SCAN,"1 second")
+        field(SCAN,"I/O Intr")
+        field(TSE, "-2")
+        field(PINI,"YES")
+        field(DTYP,"OPCUA")
+        field(DISS,"INVALID")
+        field(INP,"@2:NewObject.MyProperty")
+}
 record(ai,"REC:rdVariable"){
 #        field(SCAN,"1 second")
         field(SCAN,"I/O Intr")
@@ -70,15 +79,6 @@ record(mbbi,"REC:stBit23"){
         field(ONST,"EINS")
         field(TWST,"ZWEI")
         field(THST,"DREI")
-}
-record(ai,"REC:rdProp"){
-#        field(SCAN,"1 second")
-        field(SCAN,"I/O Intr")
-        field(TSE, "-2")
-        field(PINI,"YES")
-        field(DTYP,"OPCUA")
-        field(DISS,"INVALID")
-        field(INP,"@2:NewObject.MyProperty")
 }
 record(stringin,"REC:rdString"){
         field(DTYP,"OPCUA")

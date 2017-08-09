@@ -32,6 +32,12 @@
 #include"epicsMutex.h"
 #include "drvOpcUa.h"
 
+#ifdef _WIN32
+    #include <windows.h>
+    #include "getopt.h"
+#endif
+
+
 UaString g_startNode;
 UaString g_serverUrl;
 UaString g_certificateStorePath;
@@ -45,11 +51,6 @@ UaString optionUsage = "client [OPTIONS] PATH1 PATH...\nclient -w [OPTIONS] PATH
         "  -h : This help\n"
         "  -H HOSTNAME: own hostname. optional for certpath, if $HOST is not defined\n"
         "  -c CERTPATH: Path to certivicate store full path is: <CERTPATH>/certs/cert_client_<HOSTNAME>.der\n"
-        "  -M Mode, default = BOTH\n"
-        "           0=BOTH:NODEID or BROWSEPATH\n"
-        "           1=NODEID: 'NSINDEX,IDENTIFIER' string or numeric id\n"
-        "           2=BROWSEPATH: 'NSINDEX:BROWSE.PATH'\n"
-        "           4=BROWSEPATH_CONCAT:Concatenate: browsepath parts for each node\n"
         "  -n Read arguments are not a path but a NodeId 'NS:identifier'\n"
         "  -m monitor\n"
         "  -u URL: Server URL\n"
@@ -61,26 +62,18 @@ UaString optionUsage = "client [OPTIONS] PATH1 PATH...\nclient -w [OPTIONS] PATH
 static int verbose   = 0;
 static int monitored = 0;
 static int writeOpt  = 0;
-static GetNodeMode modeOpt = BOTH;
 
 int getOptions(int argc, char *argv[]) {
     char c;
 
     int hasCertOption = 0;
-    while((c =  getopt(argc, argv, "wmhvM:V:c:u:H:s:")) != EOF)
+    while((c =  getopt(argc, argv, "wmhvV:c:u:H:s:")) != EOF)
     {
         switch (c)
         {
         case 'h':
             printf("%s",optionUsage.toUtf8());
             exit(0);
-        case 'M':
-            modeOpt = (GetNodeMode) atoi(optarg);
-            if((modeOpt<0)||(modeOpt>=GETNODEMODEMAX)) {
-                printf("Parameter 'M %d': outside range, set to default: Browsepath or nodeId (BOTH)\n",modeOpt);
-                modeOpt=BOTH;
-            }
-            break;
         case 'c':
             g_certificateStorePath = optarg;
             hasCertOption = 1;
@@ -127,23 +120,28 @@ OPCUA_ItemINFO * newOpcItem(char *path,int verb)
     strncpy(prec->name,src,61); //set dummy record name to path print in Subscription onDataChange callback
     prec->tpro = verb;
     pOPCUA_ItemINFO->prec = prec;
-    pOPCUA_ItemINFO->recDataType = epicsOldStringT;
-    pOPCUA_ItemINFO->inpDataType=epicsOldStringT;
+//    pOPCUA_ItemINFO->recDataType; /* real recDataTyp is determined by OpcReadValues() */
+//    pOPCUA_ItemINFO->inpDataType; /* simulate INP record data will be set by setRecVal to this.varVal */
     pOPCUA_ItemINFO->isArray=0;
     pOPCUA_ItemINFO->ioscanpvt  = 0;
     pOPCUA_ItemINFO->pInpVal = NULL;
-    pOPCUA_ItemINFO->pRecVal = (char*) prec->desc;
+    pOPCUA_ItemINFO->pRecVal = prec->desc;
     pOPCUA_ItemINFO->debug = verbose;
     pOPCUA_ItemINFO->flagLock = epicsMutexMustCreate();
     if(strlen(path) < ITEMPATHLEN) {
         strcpy(pOPCUA_ItemINFO->ItemPath,path);
-        if(! setOPCUA_Item(pOPCUA_ItemINFO) )
-            return pOPCUA_ItemINFO;
+        addOPCUA_Item(pOPCUA_ItemINFO);
+        return pOPCUA_ItemINFO;
     }
     free(pOPCUA_ItemINFO);
     printf("Skip Argument '%s'\n",path);
     return NULL;
 }
+void signalHandler( int signum )
+{
+    exit(1);
+}
+
 
 int main(int argc, char* argv[], char *envp[])
 {
@@ -171,7 +169,7 @@ int main(int argc, char* argv[], char *envp[])
         printf("Client privat key:\n\t'%s'\n",g_applicationPrivateKey.toUtf8());
     }
 
-    result = opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,(GetNodeMode)modeOpt,verbose);
+    result = opcUa_init(g_serverUrl,g_applicationCertificate,g_applicationPrivateKey,g_defaultHostname,0,verbose);
     if(result)
     {
         printf("Error in opcUa_init()");
@@ -213,10 +211,13 @@ int main(int argc, char* argv[], char *envp[])
         if( OpcReadValues(verbose,monitored))
             printf("Error in OpcReadValues\n");
         while(monitored){
+#ifdef _WIN32
+            Sleep(1);
+#else
             sleep(1);
+#endif
         }
     }
-
     result = opcUa_close(verbose);
     return 0;
 }

@@ -7,6 +7,7 @@ include/
 lib/
 templates/
 html/
+iocBoot/
 O.*/
 cdCommands
 envPaths
@@ -26,3 +27,4 @@ core
 # IDE configuration
 QtC-*
 
+*.local

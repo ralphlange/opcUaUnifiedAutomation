@@ -45,12 +45,10 @@ public:
     UaStatus deleteSubscription();
     UaStatus createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo);
 
+    int debug;              // debug output independant from single channels
 private:
     UaSession*                  m_pSession;
     UaSubscription*             m_pSubscription;
     std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo;
-    int debug;              // debug output independant from single channels
 };
-extern void setTimestamp(OPCUA_ItemINFO * pItem, const UaDateTime &dt);
-
 #endif // DEVUASUBSCRIPTION_H
