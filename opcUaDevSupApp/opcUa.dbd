@@ -21,4 +21,4 @@ function(OpcUaSetupMonitors)
 function(OpcUaWriteItems)
 function(opcUa_io_report)
 
-variable(connectInterval, double)
+variable(drvOpcua_AutoConnectInterval, double)

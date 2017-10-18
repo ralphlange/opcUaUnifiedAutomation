@@ -192,9 +192,12 @@ private:
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
-static double connectInterval = 10.0;
+// Configurable default for auto connection attempt interval
+
+static double drvOpcua_AutoConnectInterval = 10.0;
+
 extern "C" {
-    epicsExportAddress(double, connectInterval);
+    epicsExportAddress(double, drvOpcua_AutoConnectInterval);
 }
 
 // global variables
@@ -233,7 +236,7 @@ DevUaClient::DevUaClient(int autoCon=1,int debug=0)
     m_pDevUaSubscription  = new DevUaSubscription(getDebug());
     autoConnect = autoCon;
     if(autoConnect)
-        autoConnector     = new autoSessionConnect(this, connectInterval, queue);
+        autoConnector     = new autoSessionConnect(this, drvOpcua_AutoConnectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()
@@ -1154,7 +1157,7 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     status = pMyClient->connect();
     if(status.isBad()) {
         errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
-                     g_serverUrl.toUtf8(), connectInterval);
+                     g_serverUrl.toUtf8(), drvOpcua_AutoConnectInterval);
         return 1;
     }
     // Create subscription
