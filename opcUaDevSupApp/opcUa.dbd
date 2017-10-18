@@ -22,3 +22,4 @@ function(OpcUaWriteItems)
 function(opcUa_io_report)
 
 variable(drvOpcua_AutoConnectInterval, double)
+variable(drvOpcua_MaxOperationsPerServiceCall, int)

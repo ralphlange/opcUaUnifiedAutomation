@@ -192,12 +192,15 @@ private:
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
-// Configurable default for auto connection attempt interval
-
+// Configurable defaults
+// - auto connection attempt interval [sec]
+// - batch size for operations (0 = no limit, don't batch)
 static double drvOpcua_AutoConnectInterval = 10.0;
+static int drvOpcua_MaxOperationsPerServiceCall = 0;
 
 extern "C" {
     epicsExportAddress(double, drvOpcua_AutoConnectInterval);
+    epicsExportAddress(int, drvOpcua_MaxOperationsPerServiceCall);
 }
 
 // global variables
@@ -237,6 +240,8 @@ DevUaClient::DevUaClient(int autoCon=1,int debug=0)
     autoConnect = autoCon;
     if(autoConnect)
         autoConnector     = new autoSessionConnect(this, drvOpcua_AutoConnectInterval, queue);
+    if (drvOpcua_MaxOperationsPerServiceCall > 0)
+        m_pSession->setMaxOperationsPerServiceCall((OpcUa_UInt32) drvOpcua_MaxOperationsPerServiceCall);
 }
 
 DevUaClient::~DevUaClient()
