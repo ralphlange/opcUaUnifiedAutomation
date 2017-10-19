@@ -101,6 +101,28 @@ EPICS OPC UA device support using the Unified Automation C++ based
   The retry interval for the initial connection can be set using the variable
   `drvOpcua_AutoConnectInterval` (double), the default is 10.0 [sec].
 
+* Configurable publish interval setting.
+  The default publish interval setting [ms] for the OPC UA subscriptions
+  can be configured using the variable `drvOpcua_DefaultPublishInterval`
+  (double), which defaults to 100.0 [ms].
+
+* Configurable sampling interval setting.
+  The default sampling interval setting [ms] for the OPC UA monitored items
+  can be configured using the variable `drvOpcua_DefaultSamplingInterval`
+  (double), which defaults to -1.0 (use publishing interval). Use a setting of
+  0.0 for the fastest practical rate (server defined).
+
+* Configurable queue size setting.
+  The default queue size setting for the OPC UA monitored items
+  can be configured using the variable `drvOpcua_DefaultQueueSize` (integer),
+  which defaults to 1 (no queueing).
+
+* Configurable discard policy setting.
+  The default discard policy for the OPC UA monitored items (in case of queue
+  overrun) can be configured to request discarding the oldest or the newest
+  value using the variable `drvOpcua_DefaultDiscardOldest` (integer),
+  which defaults to 1 (discard the oldest value).
+
 ## EPICS Database Examples:
 
 ```

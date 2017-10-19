@@ -16,15 +16,31 @@
 *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 \*************************************************************************/
 
-#include "uasubscription.h"
-#include "uasession.h"
+#include <uasubscription.h>
+#include <uasession.h>
 #include <epicsTypes.h>
 #include <epicsPrint.h>
+#include <epicsExport.h>
 #include <epicsTime.h>
-#include "dbScan.h"
+#include <dbScan.h>
+
 #include "devOpcUa.h"
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"
+
+// Configurable defaults for publishing and sampling intervals, queue size
+
+static double drvOpcua_DefaultPublishInterval = 100.0;  // ms
+static double drvOpcua_DefaultSamplingInterval = -1.0;  // ms (-1 = use publishing interval)
+static int drvOpcua_DefaultQueueSize = 1;               // no queueing
+static int drvOpcua_DefaultDiscardOldest = 1;           // discard oldest value in case of overrun
+
+extern "C" {
+    epicsExportAddress(double, drvOpcua_DefaultPublishInterval);
+    epicsExportAddress(double, drvOpcua_DefaultSamplingInterval);
+    epicsExportAddress(int, drvOpcua_DefaultQueueSize);
+    epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
+}
 
 DevUaSubscription::DevUaSubscription(int debug=0)
     : debug(debug)
@@ -143,7 +159,7 @@ UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
     UaStatus result;
     ServiceSettings serviceSettings;
     SubscriptionSettings subscriptionSettings;
-    subscriptionSettings.publishingInterval = 100;
+    subscriptionSettings.publishingInterval = drvOpcua_DefaultPublishInterval;
     if(debug) errlogPrintf("Creating subscription\n");
     result = pSession->createSubscription(
         serviceSettings,
@@ -210,9 +226,9 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
             itemsToCreate[i].ItemToMonitor.AttributeId = OpcUa_Attributes_Value;
             tempNode.copyTo(&(itemsToCreate[i].ItemToMonitor.NodeId));
             itemsToCreate[i].RequestedParameters.ClientHandle = i;
-            itemsToCreate[i].RequestedParameters.SamplingInterval = 100;
-            itemsToCreate[i].RequestedParameters.QueueSize = 1;
-            itemsToCreate[i].RequestedParameters.DiscardOldest = OpcUa_True;
+            itemsToCreate[i].RequestedParameters.SamplingInterval = drvOpcua_DefaultSamplingInterval;
+            itemsToCreate[i].RequestedParameters.QueueSize = drvOpcua_DefaultQueueSize;
+            itemsToCreate[i].RequestedParameters.DiscardOldest = (drvOpcua_DefaultDiscardOldest ? OpcUa_True : OpcUa_False);
             itemsToCreate[i].MonitoringMode = OpcUa_MonitoringMode_Reporting;
         }
         else {
