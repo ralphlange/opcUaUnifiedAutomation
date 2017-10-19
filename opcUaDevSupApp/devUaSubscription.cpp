@@ -28,18 +28,12 @@
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"
 
-// Configurable defaults for publishing and sampling intervals, queue size
+// Configurable default for publishing interval
 
 static double drvOpcua_DefaultPublishInterval = 100.0;  // ms
-static double drvOpcua_DefaultSamplingInterval = -1.0;  // ms (-1 = use publishing interval)
-static int drvOpcua_DefaultQueueSize = 1;               // no queueing
-static int drvOpcua_DefaultDiscardOldest = 1;           // discard oldest value in case of overrun
 
 extern "C" {
     epicsExportAddress(double, drvOpcua_DefaultPublishInterval);
-    epicsExportAddress(double, drvOpcua_DefaultSamplingInterval);
-    epicsExportAddress(int, drvOpcua_DefaultQueueSize);
-    epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
 }
 
 DevUaSubscription::DevUaSubscription(int debug=0)
@@ -217,22 +211,24 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     ServiceSettings serviceSettings;
     UaMonitoredItemCreateRequests itemsToCreate;
     UaMonitoredItemCreateResults createResults;
+    OPCUA_ItemINFO *info;
     // Configure one item to add to subscription
     // We monitor the value of the ServerStatus -> CurrentTime
     itemsToCreate.create(vUaNodeId.size());
     for(i=0; i<vUaNodeId.size(); i++) {
+        info = uaItemInfo->at(i);
         if ( !vUaNodeId[i].isNull() ) {
             UaNodeId tempNode(vUaNodeId[i]);
             itemsToCreate[i].ItemToMonitor.AttributeId = OpcUa_Attributes_Value;
             tempNode.copyTo(&(itemsToCreate[i].ItemToMonitor.NodeId));
             itemsToCreate[i].RequestedParameters.ClientHandle = i;
-            itemsToCreate[i].RequestedParameters.SamplingInterval = drvOpcua_DefaultSamplingInterval;
-            itemsToCreate[i].RequestedParameters.QueueSize = drvOpcua_DefaultQueueSize;
-            itemsToCreate[i].RequestedParameters.DiscardOldest = (drvOpcua_DefaultDiscardOldest ? OpcUa_True : OpcUa_False);
+            itemsToCreate[i].RequestedParameters.SamplingInterval = info->samplingInterval;
+            itemsToCreate[i].RequestedParameters.QueueSize = info->queueSize;
+            itemsToCreate[i].RequestedParameters.DiscardOldest = (info->discardOldest ? OpcUa_True : OpcUa_False);
             itemsToCreate[i].MonitoringMode = OpcUa_MonitoringMode_Reporting;
         }
         else {
-            errlogPrintf("%s Skip illegal node: %s\n",uaItemInfo->at(i)->prec->name,uaItemInfo->at(i)->ItemPath);
+            errlogPrintf("%s Skip illegal node: %s\n",info->prec->name,info->ItemPath);
         }
     }
     if(debug) errlogPrintf("\nAdd monitored items to subscription ...\n");

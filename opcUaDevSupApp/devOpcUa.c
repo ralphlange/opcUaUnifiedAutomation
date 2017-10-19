@@ -19,46 +19,49 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errlog.h>
+#include <strings.h>
 
 // #EPICS LIBS
-#include "dbAccess.h"
-#include "dbEvent.h"
-#include "dbScan.h"
-#include "epicsExport.h"
+#include <dbAccess.h>
+#include <dbEvent.h>
+#include <dbScan.h>
+#include <dbStaticLib.h>
+#include <epicsExport.h>
 #include <epicsTypes.h>
+#include <errlog.h>
 #include <initHooks.h>
-#include "devSup.h"
-#include "recSup.h"
-#include "recGbl.h"
-#include "aiRecord.h"
-#include "aaiRecord.h"
-#include "aoRecord.h"
-#include "aaoRecord.h"
-#include "biRecord.h"
-#include "boRecord.h"
-#include "longinRecord.h"
-#include "longoutRecord.h"
-#include "stringinRecord.h"
-#include "stringoutRecord.h"
-#include "mbbiRecord.h"
-#include "mbboRecord.h"
-#include "mbbiDirectRecord.h"
-#include "mbboDirectRecord.h"
-#include "asTrapWrite.h"
-#include "alarm.h"
-#include "asDbLib.h"
-#include "cvtTable.h"
-#include "menuFtype.h"
-#include "menuAlarmSevr.h"
-#include "menuAlarmStat.h"
-#include "menuConvert.h"
+#include <devSup.h>
+#include <recSup.h>
+#include <recGbl.h>
+
+#include <aiRecord.h>
+#include <aaiRecord.h>
+#include <aoRecord.h>
+#include <aaoRecord.h>
+#include <biRecord.h>
+#include <boRecord.h>
+#include <longinRecord.h>
+#include <longoutRecord.h>
+#include <stringinRecord.h>
+#include <stringoutRecord.h>
+#include <mbbiRecord.h>
+#include <mbboRecord.h>
+#include <mbbiDirectRecord.h>
+#include <mbboDirectRecord.h>
+#include <asTrapWrite.h>
+#include <alarm.h>
+#include <asDbLib.h>
+#include <cvtTable.h>
+#include <menuFtype.h>
+#include <menuAlarmSevr.h>
+#include <menuAlarmStat.h>
+#include <menuConvert.h>
 //#define GEN_SIZE_OFFSET
-#include "waveformRecord.h"
+#include <waveformRecord.h>
 //#undef  GEN_SIZE_OFFSET
 
-#include <devOpcUa.h>
-#include <drvOpcUa.h>
+#include "devOpcUa.h"
+#include "drvOpcUa.h"
 
 #ifdef _WIN32
 __inline int debug_level(dbCommon *prec) {
@@ -67,6 +70,10 @@ inline int debug_level(dbCommon *prec) {
 #endif
         return prec->tpro;
 }
+
+#ifdef _WIN32
+#define strncasecmp _strnicmp
+#endif
 
 #define DEBUG_LEVEL debug_level((dbCommon*)prec)
 
@@ -77,6 +84,16 @@ static  long         get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt);
 
 //extern int OpcUaInitItem(char *OpcUaName, dbCommon* pRecord, OPCUA_ItemINFO** uaItem);
 //extern void checkOpcUaVariables(void);
+
+// Configurable defaults for sampling interval, queue size, discard policy
+
+static double drvOpcua_DefaultSamplingInterval = -1.0;  // ms (-1 = use publishing interval)
+static int drvOpcua_DefaultQueueSize = 1;               // no queueing
+static int drvOpcua_DefaultDiscardOldest = 1;           // discard oldest value in case of overrun
+
+epicsExportAddress(double, drvOpcua_DefaultSamplingInterval);
+epicsExportAddress(int, drvOpcua_DefaultQueueSize);
+epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
 
 /*+**************************************************************************
  *		DSET functions
@@ -196,6 +213,38 @@ epicsExportAddress(dset,devwaveformOpcUa);
  *		Defines and Locals
  **************************************************************************-*/
 
+/***************************************************************************
+ *      Scan info items for option settings
+ ***************************************************************************/
+
+static void scanInfoItems(const dbCommon *pcommon, OPCUA_ItemINFO *info)
+{
+    long status;
+    DBENTRY dbentry;
+    DBENTRY *pdbentry = &dbentry;
+
+    dbInitEntry(pdbbase, pdbentry);
+
+    status = dbFindRecord(pdbentry, pcommon->name);
+    if (status) {
+        dbFinishEntry(pdbentry);
+        return;
+    }
+
+    if (dbFindInfo(pdbentry, "opcua:SAMPLING") == 0) {
+        info->samplingInterval = atof(dbGetInfoString(pdbentry));
+    }
+    if (dbFindInfo(pdbentry, "opcua:QSIZE") == 0) {
+        info->queueSize = (epicsUInt32) atoi(dbGetInfoString(pdbentry));
+    }
+    if (dbFindInfo(pdbentry, "opcua:DISCARD") == 0) {
+        if (strncasecmp(dbGetInfoString(pdbentry), "new", 3) == 0) {
+            info->discardOldest = 0;
+        }
+    }
+    dbFinishEntry(pdbentry);
+}
+
 static void opcuaMonitorControl (initHookState state)
 {
     switch (state) {
@@ -247,11 +296,15 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     }
 
     prec->dpvt = uaItem;
-    uaItem->recDataType=recType;
+    uaItem->recDataType = recType;
     uaItem->pRecVal = val;
     uaItem->prec = prec;
     uaItem->debug = prec->tpro;
     uaItem->flagLock = epicsMutexMustCreate();
+    uaItem->samplingInterval = drvOpcua_DefaultSamplingInterval;
+    uaItem->queueSize = drvOpcua_DefaultQueueSize;
+    uaItem->discardOldest = drvOpcua_DefaultDiscardOldest;
+    scanInfoItems(prec, uaItem);
     if(uaItem->debug >= 2)
         errlogPrintf("init_common %s\t PACT= %i, recVal=%p\n", prec->name, prec->pact, uaItem->pRecVal);
     // get OPC item type in init -> after

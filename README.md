@@ -107,20 +107,32 @@ EPICS OPC UA device support using the Unified Automation C++ based
   (double), which defaults to 100.0 [ms].
 
 * Configurable sampling interval setting.
+  The sampling interval can be configured for each record by adding
+  an info item like
+     `info(opcua:SAMPLING, "100.0")`
+  with a double value in [ms].
   The default sampling interval setting [ms] for the OPC UA monitored items
   can be configured using the variable `drvOpcua_DefaultSamplingInterval`
   (double), which defaults to -1.0 (use publishing interval). Use a setting of
   0.0 for the fastest practical rate (server defined).
 
 * Configurable queue size setting.
+  The server side queue size can be configured for each record by adding
+  an info item like
+     `info(opcua:QSIZE, "10")`
+  with an unsigned integer value > 0.
   The default queue size setting for the OPC UA monitored items
   can be configured using the variable `drvOpcua_DefaultQueueSize` (integer),
   which defaults to 1 (no queueing).
 
 * Configurable discard policy setting.
-  The default discard policy for the OPC UA monitored items (in case of queue
-  overrun) can be configured to request discarding the oldest or the newest
-  value using the variable `drvOpcua_DefaultDiscardOldest` (integer),
+  The discard policy for the server side queue (in case of overrun) can be
+  configured for each record requesting  to discard the oldest or the newest
+  value by adding an info item like
+     `info(opcua:DISCARD, "new")`
+  with "old" (discard the oldest value) or "new" (discard the newest value).
+  The default discard policy can be configured using the variable
+  `drvOpcua_DefaultDiscardOldest` (integer),
   which defaults to 1 (discard the oldest value).
 
 ## EPICS Database Examples:
