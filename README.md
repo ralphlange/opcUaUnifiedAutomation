@@ -99,7 +99,7 @@ EPICS OPC UA device support using the Unified Automation C++ based
 
 * Initial connection and reconnection are handled appropriately.
   The retry interval for the initial connection can be set using the variable
-  `connectInterval` (double), the default is 10.0 [sec].
+  `drvOpcua_AutoConnectInterval` (double), the default is 10.0 [sec].
 
 ## EPICS Database Examples:
 

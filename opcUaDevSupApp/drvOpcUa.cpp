@@ -192,9 +192,15 @@ private:
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
-static double connectInterval = 10.0;
+// Configurable defaults
+// - auto connection attempt interval [sec]
+// - batch size for operations (0 = no limit, don't batch)
+static double drvOpcua_AutoConnectInterval = 10.0;
+static int drvOpcua_MaxOperationsPerServiceCall = 0;
+
 extern "C" {
-    epicsExportAddress(double, connectInterval);
+    epicsExportAddress(double, drvOpcua_AutoConnectInterval);
+    epicsExportAddress(int, drvOpcua_MaxOperationsPerServiceCall);
 }
 
 // global variables
@@ -233,7 +239,9 @@ DevUaClient::DevUaClient(int autoCon=1,int debug=0)
     m_pDevUaSubscription  = new DevUaSubscription(getDebug());
     autoConnect = autoCon;
     if(autoConnect)
-        autoConnector     = new autoSessionConnect(this, connectInterval, queue);
+        autoConnector     = new autoSessionConnect(this, drvOpcua_AutoConnectInterval, queue);
+    if (drvOpcua_MaxOperationsPerServiceCall > 0)
+        m_pSession->setMaxOperationsPerServiceCall((OpcUa_UInt32) drvOpcua_MaxOperationsPerServiceCall);
 }
 
 DevUaClient::~DevUaClient()
@@ -1153,7 +1161,7 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     status = pMyClient->connect();
     if(status.isBad()) {
         errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
-                     g_serverUrl.toUtf8(), connectInterval);
+                     g_serverUrl.toUtf8(), drvOpcua_AutoConnectInterval);
         return 1;
     }
     // Create subscription
