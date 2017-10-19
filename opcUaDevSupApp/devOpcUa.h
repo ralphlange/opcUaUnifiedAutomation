@@ -53,6 +53,10 @@ typedef struct OPCUA_Item {
 
     int isArray;
     int arraySize;
+                            /* OPC UA properties of the monitored item */
+    double samplingInterval;
+    epicsUInt32 queueSize;
+    unsigned char discardOldest;
 
     int debug;              // debug level of this item, defined in field REC:TPRO
     int stat;               /* Status of the opc connection */

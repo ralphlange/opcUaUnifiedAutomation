@@ -656,16 +656,27 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 void DevUaClient::itemStat(int verb)
 {
     errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
-    if(verb>0) {
-        if(verb==1) errlogPrintf("Only bad signals\n");
-        errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
-        for(unsigned int i=0;i< vUaItemInfo.size();i++) {
+    if (verb > 0) {
+        if (verb == 1) errlogPrintf("Showing only bad signals\n");
+        if (verb > 2)
+            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat Sampl QSiz Drop NS:PATH\n");
+        else
+            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
+        for (unsigned int i=0; i< vUaItemInfo.size(); i++) {
             OPCUA_ItemINFO* uaItem = vUaItemInfo[i];
-            if((verb>1) || ((verb==1)&&(uaItem->stat==1)))  // verb=1 only the bad, verb>1 all
-                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",uaItem->itemIdx,uaItem->prec->name,
+            if ((verb == 2) || ((verb == 1) && (uaItem->stat == 1)))  // verb == 1 only the bad, verb > 1 all
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",
+                   uaItem->itemIdx,uaItem->prec->name,
                    uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
                    uaItem->stat,uaItem->ItemPath );
+            else
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %5g %4u %4s %s\n",
+                   uaItem->itemIdx,uaItem->prec->name,
+                   uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                   uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                   uaItem->stat, uaItem->samplingInterval, uaItem->queueSize,
+                   ( uaItem->discardOldest ? "old" : "new" ), uaItem->ItemPath );
         }
     }
 }
