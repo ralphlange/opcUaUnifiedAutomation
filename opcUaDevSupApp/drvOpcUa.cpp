@@ -979,64 +979,64 @@ long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
     case OpcUaType_SByte:
 
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setByte(*((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setByte(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setByte(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Byte:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setByte(*((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setByte(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setByte(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Int16:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setInt16(*((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setInt16(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setInt16(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_UInt16:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setUInt16( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setUInt16(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setUInt16(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Int32:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
         case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setInt32(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_UInt32:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setUInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
         case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setUInt32(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Float:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
-        case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setFloat( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setFloat(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsFloat64T: tempValue.setFloat(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
         break;
     case OpcUaType_Double:
         switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-        case epicsInt32T:   tempValue.setInt32( *((epicsInt32*)(uaItem)->pRecVal));break;
-        case epicsUInt32T:  tempValue.setUInt32(*((epicsUInt32*)(uaItem)->pRecVal));break;
+        case epicsInt32T:   tempValue.setDouble( *((epicsInt32*)(uaItem)->pRecVal));break;
+        case epicsUInt32T:  tempValue.setDouble(*((epicsUInt32*)(uaItem)->pRecVal));break;
         case epicsFloat64T: tempValue.setDouble(*((epicsFloat64*)(uaItem)->pRecVal));break;
         default: status = 1;
         }
