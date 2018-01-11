@@ -16,15 +16,25 @@
 *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 \*************************************************************************/
 
-#include "uasubscription.h"
-#include "uasession.h"
+#include <uasubscription.h>
+#include <uasession.h>
 #include <epicsTypes.h>
 #include <epicsPrint.h>
+#include <epicsExport.h>
 #include <epicsTime.h>
-#include "dbScan.h"
+#include <dbScan.h>
+
 #include "devOpcUa.h"
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"
+
+// Configurable default for publishing interval
+
+static double drvOpcua_DefaultPublishInterval = 100.0;  // ms
+
+extern "C" {
+    epicsExportAddress(double, drvOpcua_DefaultPublishInterval);
+}
 
 DevUaSubscription::DevUaSubscription(int debug=0)
     : debug(debug)
@@ -143,7 +153,7 @@ UaStatus DevUaSubscription::createSubscription(UaSession *pSession)
     UaStatus result;
     ServiceSettings serviceSettings;
     SubscriptionSettings subscriptionSettings;
-    subscriptionSettings.publishingInterval = 100;
+    subscriptionSettings.publishingInterval = drvOpcua_DefaultPublishInterval;
     if(debug) errlogPrintf("Creating subscription\n");
     result = pSession->createSubscription(
         serviceSettings,
@@ -201,22 +211,24 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     ServiceSettings serviceSettings;
     UaMonitoredItemCreateRequests itemsToCreate;
     UaMonitoredItemCreateResults createResults;
+    OPCUA_ItemINFO *info;
     // Configure one item to add to subscription
     // We monitor the value of the ServerStatus -> CurrentTime
     itemsToCreate.create(vUaNodeId.size());
     for(i=0; i<vUaNodeId.size(); i++) {
+        info = uaItemInfo->at(i);
         if ( !vUaNodeId[i].isNull() ) {
             UaNodeId tempNode(vUaNodeId[i]);
             itemsToCreate[i].ItemToMonitor.AttributeId = OpcUa_Attributes_Value;
             tempNode.copyTo(&(itemsToCreate[i].ItemToMonitor.NodeId));
             itemsToCreate[i].RequestedParameters.ClientHandle = i;
-            itemsToCreate[i].RequestedParameters.SamplingInterval = 100;
-            itemsToCreate[i].RequestedParameters.QueueSize = 1;
-            itemsToCreate[i].RequestedParameters.DiscardOldest = OpcUa_True;
+            itemsToCreate[i].RequestedParameters.SamplingInterval = info->samplingInterval;
+            itemsToCreate[i].RequestedParameters.QueueSize = info->queueSize;
+            itemsToCreate[i].RequestedParameters.DiscardOldest = (info->discardOldest ? OpcUa_True : OpcUa_False);
             itemsToCreate[i].MonitoringMode = OpcUa_MonitoringMode_Reporting;
         }
         else {
-            errlogPrintf("%s Skip illegal node: %s\n",uaItemInfo->at(i)->prec->name,uaItemInfo->at(i)->ItemPath);
+            errlogPrintf("%s Skip illegal node: %s\n",info->prec->name,info->ItemPath);
         }
     }
     if(debug) errlogPrintf("\nAdd monitored items to subscription ...\n");

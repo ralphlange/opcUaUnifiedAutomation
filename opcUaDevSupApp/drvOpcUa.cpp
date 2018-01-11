@@ -192,9 +192,12 @@ private:
 void printVal(UaVariant &val,OpcUa_UInt32 IdxUaItemInfo);
 void print_OpcUa_DataValue(_OpcUa_DataValue *d);
 
-static double connectInterval = 10.0;
+// Configurable default for auto connection attempt interval
+
+static double drvOpcua_AutoConnectInterval = 10.0;
+
 extern "C" {
-    epicsExportAddress(double, connectInterval);
+    epicsExportAddress(double, drvOpcua_AutoConnectInterval);
 }
 
 // global variables
@@ -233,7 +236,7 @@ DevUaClient::DevUaClient(int autoCon=1,int debug=0)
     m_pDevUaSubscription  = new DevUaSubscription(getDebug());
     autoConnect = autoCon;
     if(autoConnect)
-        autoConnector     = new autoSessionConnect(this, connectInterval, queue);
+        autoConnector     = new autoSessionConnect(this, drvOpcua_AutoConnectInterval, queue);
 }
 
 DevUaClient::~DevUaClient()
@@ -649,16 +652,27 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 void DevUaClient::itemStat(int verb)
 {
     errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
-    if(verb>0) {
-        if(verb==1) errlogPrintf("Only bad signals\n");
-        errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
-        for(unsigned int i=0;i< vUaItemInfo.size();i++) {
+    if (verb > 0) {
+        if (verb == 1) errlogPrintf("Showing only bad signals\n");
+        if (verb > 2)
+            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat Sampl QSiz Drop NS:PATH\n");
+        else
+            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
+        for (unsigned int i=0; i< vUaItemInfo.size(); i++) {
             OPCUA_ItemINFO* uaItem = vUaItemInfo[i];
-            if((verb>1) || ((verb==1)&&(uaItem->stat==1)))  // verb=1 only the bad, verb>1 all
-                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",uaItem->itemIdx,uaItem->prec->name,
+            if ((verb == 2) || ((verb == 1) && (uaItem->stat == 1)))  // verb == 1 only the bad, verb > 1 all
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",
+                   uaItem->itemIdx,uaItem->prec->name,
                    uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
                    uaItem->stat,uaItem->ItemPath );
+            else
+                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %5g %4u %4s %s\n",
+                   uaItem->itemIdx,uaItem->prec->name,
+                   uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                   uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                   uaItem->stat, uaItem->samplingInterval, uaItem->queueSize,
+                   ( uaItem->discardOldest ? "old" : "new" ), uaItem->ItemPath );
         }
     }
 }
@@ -1154,7 +1168,7 @@ long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaStr
     status = pMyClient->connect();
     if(status.isBad()) {
         errlogPrintf("drvOpcuaSetup: Failed to connect to server '%s' - will retry every %f sec\n",
-                     g_serverUrl.toUtf8(), connectInterval);
+                     g_serverUrl.toUtf8(), drvOpcua_AutoConnectInterval);
         return 1;
     }
     // Create subscription
