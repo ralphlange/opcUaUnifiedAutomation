@@ -19,6 +19,8 @@
 #ifndef __DRVOPCUA_H
 #define __DRVOPCUA_H
 
+#include <uaclientsdk.h>
+
 #include "devOpcUa.h"
 
     typedef enum {BOTH=0,NODEID,BROWSEPATH,BROWSEPATH_CONCAT,GETNODEMODEMAX} GetNodeMode;
@@ -26,7 +28,7 @@
     extern char *getTime(char *buf);
     extern long opcUa_close(int verbose);
     extern long OpcUaSetupMonitors(void);
-    extern void addOPCUA_Item(OPCUA_ItemINFO *h);
+    extern void addOPCUA_Item(const char *itemPath, OPCUA_ItemINFO *h);
 // iocShell:
     extern long OpcUaWriteItems(OPCUA_ItemINFO* uaItem);
 // client:
@@ -36,8 +38,8 @@
 
     extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem,int debug);
     extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int autoConn, int debug);
-    extern "C" {
+extern "C" {
     extern long opcUa_io_report (int); /* Write IO report output to stdout. */
-    }
+}
 
 #endif /* ifndef __DRVOPCUA_H */

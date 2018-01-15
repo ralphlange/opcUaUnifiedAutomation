@@ -46,12 +46,15 @@ public:
 
     UaStatus createSubscription(UaSession *pSession);
     UaStatus deleteSubscription();
-    UaStatus createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo);
+    // FIXME: 2nd arg should be reference.
+    UaStatus createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_MonitoredItem *> *monitoredItems);
 
-    int debug;              // debug output independant from single channels
+    void distributeData(const UaVariant &value, const epicsTimeStamp ts, OPCUA_ItemINFO *pinfo, const int debug);
+
+    int debug;              // debug output independent from single channels
 private:
     UaSession*                  m_pSession;
     UaSubscription*             m_pSubscription;
-    std::vector<OPCUA_ItemINFO *> *m_vectorUaItemInfo;
+    std::vector<OPCUA_MonitoredItem *> *m_monitoredItems;
 };
 #endif // DEVUASUBSCRIPTION_H
