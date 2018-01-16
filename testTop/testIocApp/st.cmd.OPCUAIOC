@@ -1,20 +1,25 @@
-#!../../bin/linux-x86_64/OPCUAIOC
+#!../bin/linux-x86_64/OPCUAIOC
 
-cd ../..
+cd ..
 epicsEnvSet IOC OPCUAIOC
 dbLoadDatabase "dbd/OPCUAIOC.dbd",0,0
 ${IOC}_registerRecordDeviceDriver pdbbase
 
+# PLC_PHA3X by Harry
+drvOpcuaSetup("opc.tcp://193.149.12.76:4840","","",0)
+dbLoadRecords("testIocApp/PAHX3.db")
+
 # local freeOpcUaEpicsServer/bin/linux-x86_64/server
-drvOpcuaSetup("opc.tcp://localhost:4841","","",0)
-dbLoadRecords("db/freeopcuaTEST.db")
+#drvOpcuaSetup("opc.tcp://localhost:4841","","",0)
+#dbLoadRecords("db/freeopcuaTEST.db")
 #dbLoadRecords("db/testServer.db")
 
 # local Softing test server
 #drvOpcuaSetup("opc.tcp://localhost:48010","","",0)
 #dbLoadRecords("db/OPCUA_RECORD.db")
 
-opcuaDebug(3)
+opcuaDebug(1)
 setIocLogDisable 1
 iocInit
+opcuaDebug(0)
 opcuaStat(0)

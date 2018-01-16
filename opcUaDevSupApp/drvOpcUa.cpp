@@ -1061,7 +1061,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
         }
         break;
     default:
-        if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: unsupported opc data type: '%s'", uaItem->prec->name, variantTypeStrings(uaItem->itemDataType));
+        if(pMyClient->getDebug()) errlogPrintf("%20s\tOpcUaWriteItems: unsupported opc data type: '%s'", uaItem->prec->name, variantTypeStrings(uaItem->itemDataType));
     }
     if((status==1) && pMyClient->getDebug()) {
         errlogPrintf("%s\tOpcUaWriteItems: unsupported record data type: '%s'\n",uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
@@ -1089,6 +1089,7 @@ long OpcUaSetupMonitors(void)
     UaDataValues values;
     ServiceSettings     serviceSettings;
     UaDiagnosticInfos   diagnosticInfos;
+    int dataLossWarning = 0;
 
     if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors Browsepath ok len = %d\n",(int)pMyClient->vUaNodeId.size());
 
@@ -1104,12 +1105,12 @@ long OpcUaSetupMonitors(void)
         OPCUA_ItemINFO* uaItem = pMyClient->vUaItemInfo[i];
         if (OpcUa_IsBad(values[i].StatusCode)) {
             errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",uaItem->itemIdx,
-                     uaItem->prec->name, uaItem->ItemPath,
-                     UaStatus(values[i].StatusCode).toString().toUtf8());
+                         uaItem->prec->name, uaItem->ItemPath,
+                         UaStatus(values[i].StatusCode).toString().toUtf8());
         }
         else {
             if(values[i].Value.ArrayType && !uaItem->isArray) {
-                 if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Dont Support Array Data\n",uaItem->prec->name);
+                if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Don't Support Array Data\n",uaItem->prec->name);
             }
             else {
 
@@ -1118,6 +1119,58 @@ long OpcUaSetupMonitors(void)
                 uaItem->isArray = 0;
                 epicsMutexUnlock(uaItem->flagLock);
                 if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p flagSuppressWrite: %d\n",uaItem->itemIdx,uaItem->prec->name,uaItem,uaItem->flagSuppressWrite);
+                switch((int)uaItem->itemDataType){
+                case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
+                    switch(uaItem->recDataType){
+                    case epicsFloat64T: dataLossWarning++;
+                    default:;
+                    }
+                    break;
+                case OpcUaType_SByte:
+                case OpcUaType_Byte:
+                case OpcUaType_Int16:
+                case OpcUaType_UInt16:  dataLossWarning++;
+                    break;
+
+                case OpcUaType_Int32:
+                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+                    case epicsUInt32T:
+                    case epicsFloat64T:  dataLossWarning++;  break;
+                    default:;
+                    }
+                    break;
+                case OpcUaType_UInt32:
+                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+                    case epicsInt32T:
+                    case epicsFloat64T:  dataLossWarning++;  break;
+                    default:;
+                    }
+                    break;
+                case OpcUaType_Float:
+                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
+                    case epicsFloat64T:  dataLossWarning++;  break;
+                    default:;
+                    }
+                    break;
+                case OpcUaType_Double:
+                    break;
+                case OpcUaType_String:
+                    if(uaItem->recDataType != epicsOldStringT)
+                        dataLossWarning++;
+                    break;
+                default:
+                    errlogPrintf("%20s opc data type not supported: %d,%s", uaItem->prec->name, uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType));
+                }
+                if(dataLossWarning) {
+                    if(dataLossWarning==1)
+                        errlogPrintf("WARNING channels may loose data:   Epics Type    -> OpcUa Type\n");
+                    else if(dataLossWarning==2) {
+                        errlogPrintf("%33s %2d,%s -> %2d,%s\n",uaItem->prec->name,
+                                     uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                                uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType));
+                        dataLossWarning--;
+                    }
+                }
             }
         }
     }
