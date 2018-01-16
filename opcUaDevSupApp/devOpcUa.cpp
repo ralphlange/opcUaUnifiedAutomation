@@ -60,6 +60,9 @@
 #include <waveformRecord.h>
 //#undef  GEN_SIZE_OFFSET
 
+#include "uabase.h"
+#include "uaclientsdk.h"
+
 #include "devOpcUa.h"
 #include "drvOpcUa.h"
 
@@ -98,6 +101,7 @@ epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
 /*+**************************************************************************
  *		DSET functions
  **************************************************************************-*/
+extern "C" {
 long init (int after);
 
 static long init_longout  (struct longoutRecord* plongout);
@@ -127,69 +131,69 @@ static long init_stringout  (struct stringoutRecord* pstringout);
 static long write_stringout (struct stringoutRecord* pstringout);
 
 typedef struct {
-   long number;
-   DEVSUPFUN report;
-   DEVSUPFUN init;
-   DEVSUPFUN init_record;
-   DEVSUPFUN get_ioint_info;
-   DEVSUPFUN write_record;
+    long number;
+    DEVSUPFUN report;
+    DEVSUPFUN init;
+    DEVSUPFUN init_record;
+    DEVSUPFUN get_ioint_info;
+    DEVSUPFUN write_record;
 } OpcUaDSET;
 
-OpcUaDSET devlongoutOpcUa =    {5, NULL, init, init_longout, get_ioint_info, write_longout  };
+OpcUaDSET devlongoutOpcUa =    {5, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_longout, (DEVSUPFUN)get_ioint_info,(DEVSUPFUN) write_longout  };
 epicsExportAddress(dset,devlongoutOpcUa);
 
-OpcUaDSET devlonginOpcUa =     {5, NULL, init, init_longin, get_ioint_info, read_longin	 };
+OpcUaDSET devlonginOpcUa =     {5, NULL,(DEVSUPFUN) init, (DEVSUPFUN)init_longin, (DEVSUPFUN)get_ioint_info, (DEVSUPFUN)read_longin	 };
 epicsExportAddress(dset,devlonginOpcUa);
 
-OpcUaDSET devmbbiDirectOpcUa = {5, NULL, init, init_mbbiDirect, get_ioint_info, read_mbbiDirect};
+OpcUaDSET devmbbiDirectOpcUa = {5, NULL, (DEVSUPFUN)init,(DEVSUPFUN) init_mbbiDirect,(DEVSUPFUN) get_ioint_info, (DEVSUPFUN)read_mbbiDirect};
 epicsExportAddress(dset,devmbbiDirectOpcUa);
 
-OpcUaDSET devmbboDirectOpcUa = {5, NULL, init, init_mbboDirect, get_ioint_info, write_mbboDirect};
+OpcUaDSET devmbboDirectOpcUa = {5, NULL,(DEVSUPFUN) init,(DEVSUPFUN) init_mbboDirect,(DEVSUPFUN) get_ioint_info, (DEVSUPFUN)write_mbboDirect};
 epicsExportAddress(dset,devmbboDirectOpcUa);
 
-OpcUaDSET devmbbiOpcUa = {5, NULL, init, init_mbbi, get_ioint_info, read_mbbi};
+OpcUaDSET devmbbiOpcUa = {5, NULL,(DEVSUPFUN) init, (DEVSUPFUN)init_mbbi,(DEVSUPFUN) get_ioint_info, (DEVSUPFUN)read_mbbi};
 epicsExportAddress(dset,devmbbiOpcUa);
 
-OpcUaDSET devmbboOpcUa = {5, NULL, init, init_mbbo, get_ioint_info, write_mbbo};
+OpcUaDSET devmbboOpcUa = {5, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_mbbo, (DEVSUPFUN)get_ioint_info, (DEVSUPFUN)write_mbbo};
 epicsExportAddress(dset,devmbboOpcUa);
 
-OpcUaDSET devbiOpcUa = {5, NULL, init, init_bi, get_ioint_info, read_bi};
+OpcUaDSET devbiOpcUa = {5, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_bi,(DEVSUPFUN) get_ioint_info, (DEVSUPFUN)read_bi};
 epicsExportAddress(dset,devbiOpcUa);
 
-OpcUaDSET devboOpcUa = {5, NULL, init, init_bo, get_ioint_info, write_bo};
+OpcUaDSET devboOpcUa = {5, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_bo, (DEVSUPFUN)get_ioint_info, (DEVSUPFUN)write_bo};
 epicsExportAddress(dset,devboOpcUa);
 
-OpcUaDSET devstringinOpcUa = {5, NULL, init, init_stringin, get_ioint_info, read_stringin};
+OpcUaDSET devstringinOpcUa = {5, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_stringin, (DEVSUPFUN)get_ioint_info, (DEVSUPFUN)read_stringin};
 epicsExportAddress(dset,devstringinOpcUa);
 
-OpcUaDSET devstringoutOpcUa = {5, NULL, init, init_stringout, get_ioint_info, write_stringout};
+OpcUaDSET devstringoutOpcUa = {5, NULL,(DEVSUPFUN) init, (DEVSUPFUN)init_stringout, (DEVSUPFUN)get_ioint_info,(DEVSUPFUN) write_stringout};
 epicsExportAddress(dset,devstringoutOpcUa);
 
 struct aidset { // analog input dset
-	long		number;
-	DEVSUPFUN	dev_report;
-	DEVSUPFUN	init;
-        DEVSUPFUN	init_record; 	    //returns: (-1,0)=>(failure,success)
-	DEVSUPFUN	get_ioint_info;
-        DEVSUPFUN	read_ai;    	    // 2 => success, don't convert)
-                        // if convert then raw value stored in rval
-	DEVSUPFUN	special_linconv;
-} devaiOpcUa =         {6, NULL, init, init_ai, get_ioint_info, read_ai, NULL };
+    long		number;
+    DEVSUPFUN	dev_report;
+    DEVSUPFUN	init;
+    DEVSUPFUN	init_record; 	    //returns: (-1,0)=>(failure,success)
+    DEVSUPFUN	get_ioint_info;
+    DEVSUPFUN	read_ai;    	    // 2 => success, don't convert)
+    // if convert then raw value stored in rval
+    DEVSUPFUN	special_linconv;
+} devaiOpcUa =         {6, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_ai, (DEVSUPFUN)get_ioint_info, (DEVSUPFUN)read_ai, NULL };
 epicsExportAddress(dset,devaiOpcUa);
 
 struct aodset { // analog input dset
-	long		number;
-	DEVSUPFUN	dev_report;
-	DEVSUPFUN	init;
-        DEVSUPFUN	init_record; 	    //returns: 2=> success, no convert
-	DEVSUPFUN	get_ioint_info;
-        DEVSUPFUN	write_ao;   	    //(0)=>(success )
-	DEVSUPFUN	special_linconv;
-} devaoOpcUa =         {6, NULL, init, init_ao, get_ioint_info, write_ao, NULL };
+    long		number;
+    DEVSUPFUN	dev_report;
+    DEVSUPFUN	init;
+    DEVSUPFUN	init_record; 	    //returns: 2=> success, no convert
+    DEVSUPFUN	get_ioint_info;
+    DEVSUPFUN	write_ao;   	    //(0)=>(success )
+    DEVSUPFUN	special_linconv;
+} devaoOpcUa =         {6, NULL, (DEVSUPFUN)init, (DEVSUPFUN)init_ao,(DEVSUPFUN) get_ioint_info,(DEVSUPFUN) write_ao, NULL };
 epicsExportAddress(dset,devaoOpcUa);
 
-static long init_waveformRecord();
-static long read_wf();
+static long init_waveformRecord(struct waveformRecord* prec);
+static long read_wf(struct waveformRecord *prec);
 struct {
     long number;
     DEVSUPFUN report;
@@ -202,12 +206,14 @@ struct {
     6,
     NULL,
     NULL,
-    init_waveformRecord,
-    get_ioint_info,
-    read_wf,
+    (DEVSUPFUN)init_waveformRecord,
+    (DEVSUPFUN)get_ioint_info,
+    (DEVSUPFUN)read_wf,
     NULL
 };
 epicsExportAddress(dset,devwaveformOpcUa);
+
+} // extern C
 
 /***************************************************************************
  *		Defines and Locals
@@ -267,7 +273,7 @@ long init (int after)
     return 0;
 }
 
-long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int inpType, void *inpVal)
+long init_common (dbCommon *prec, struct link* plnk, epicsType recType, void *val, int inpType, void *inpVal)
 {
     OPCUA_ItemINFO* uaItem;
 
@@ -310,7 +316,7 @@ long init_common (dbCommon *prec, struct link* plnk, int recType, void *val, int
     // get OPC item type in init -> after
 
     if(inpType) { // is OUT record
-        uaItem->inpDataType = inpType;
+        uaItem->inpDataType = (epicsType) inpType;
         uaItem->pInpVal = inpVal;
         callbackSetCallback(outRecordCallback, &(uaItem->callback));
         callbackSetUser(prec, &(uaItem->callback));
@@ -638,7 +644,7 @@ long init_waveformRecord(struct waveformRecord* prec)
         case menuFtypeDOUBLE: recType = epicsFloat64T; break;
         case menuFtypeENUM  : recType = epicsEnum16T; break;
     }
-    ret = init_common((dbCommon*)prec,&(prec->inp),recType,(void*)prec->bptr,0,NULL);
+    ret = init_common((dbCommon*)prec,&(prec->inp),(epicsType) recType,(void*)prec->bptr,0,NULL);
     pOpcUa2Epics = (OPCUA_ItemINFO*)prec->dpvt;
     if(pOpcUa2Epics != NULL) {
         pOpcUa2Epics->isArray = 1;
@@ -669,12 +675,15 @@ long read_wf(struct waveformRecord *prec)
     return ret;
 }
 
+
 /* callback service routine */
 static void outRecordCallback(CALLBACK *pcallback) {
     char buf[256];
+    void *pVoid;
     dbCommon *prec;
-    callbackGetUser(prec, pcallback);
-    if(prec) {
+    callbackGetUser(pVoid, pcallback);
+    if(pVoid) {
+        prec = (dbCommon*) pVoid;
         if(DEBUG_LEVEL >= 2) errlogPrintf("outRecordCallback: %s %s\tdbProcess\n", prec->name,getTime(buf));
         dbProcess(prec);
     }

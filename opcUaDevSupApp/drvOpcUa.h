@@ -23,15 +23,11 @@
 
 #include <devOpcUa.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
     typedef enum {BOTH=0,NODEID,BROWSEPATH,BROWSEPATH_CONCAT,GETNODEMODEMAX} GetNodeMode;
     const char *variantTypeStrings(int type);
     extern char *getTime(char *buf);
     extern long opcUa_close(int verbose);
     extern long OpcUaSetupMonitors(void);
-    extern long opcUa_io_report (int); /* Write IO report output to stdout. */
     extern void addOPCUA_Item(OPCUA_ItemINFO *h);
 // iocShell:
     extern long OpcUaWriteItems(OPCUA_ItemINFO* uaItem);
@@ -39,10 +35,10 @@ extern "C" {
     extern long OpcReadValues(int verbose,int monitored);
     extern long OpcWriteValue(int opcUaItemIndex,double val,int verbose);
     extern int maxDebug(int dbg,int recDbg);
-#ifdef __cplusplus
-}
+
     extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem,int debug);
     extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int autoConn, int debug);
-#endif
-
+    extern "C" {
+    extern long opcUa_io_report (int); /* Write IO report output to stdout. */
+    }
 #endif /* ifndef __DRVOPCUA_H */

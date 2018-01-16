@@ -68,13 +68,7 @@ typedef struct OPCUA_Item {
     dbCommon *prec;
 } OPCUA_ItemINFO;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 OPCUA_ItemINFO *getHead();
 void setHead(OPCUA_ItemINFO *);
-#ifdef __cplusplus
-}
-#endif
 
 #endif
