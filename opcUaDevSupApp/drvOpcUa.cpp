@@ -142,7 +142,7 @@ public:
     long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter);
     UaStatus createMonitoredItems();
 
-    UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos);
+    UaStatus readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos,int Attribute);
 
     UaStatus writeFunc(ServiceSettings &serviceSettings,UaWriteValues &nodesToWrite,UaStatusCodeArray &results,UaDiagnosticInfos &diagnosticInfos);
     void writeComplete(OpcUa_UInt32 transactionId,const UaStatus&result,const UaStatusCodeArray& results,const UaDiagnosticInfos& diagnosticInfos);
@@ -612,7 +612,7 @@ void DevUaClient::writeComplete( OpcUa_UInt32 transactionId,const UaStatus& resu
 }
 }
 
-UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos)
+UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSettings,UaDiagnosticInfos &diagnosticInfos, int attribute)
 {
     UaStatus          result;
     UaReadValueIds nodeToRead;
@@ -623,7 +623,7 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
     for (i=0,j=0; i <pMyClient->vUaNodeId.size(); i++ )
     {
         if ( !vUaNodeId[i].isNull() ) {
-            nodeToRead[j].AttributeId = OpcUa_Attributes_Value;
+            nodeToRead[j].AttributeId = attribute;
             (pMyClient->vUaNodeId[i]).copyTo(&(nodeToRead[j].NodeId)) ;
             j++;
         }
@@ -652,28 +652,37 @@ UaStatus DevUaClient::readFunc(UaDataValues &values,ServiceSettings &serviceSett
 void DevUaClient::itemStat(int verb)
 {
     errlogPrintf("OpcUa driver: Connected items: %lu\n", (unsigned long)vUaItemInfo.size());
-    if (verb > 0) {
-        if (verb == 1) errlogPrintf("Showing only bad signals\n");
-        if (verb > 2)
-            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat Sampl QSiz Drop NS:PATH\n");
-        else
-            errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
-        for (unsigned int i=0; i< vUaItemInfo.size(); i++) {
-            OPCUA_ItemINFO* uaItem = vUaItemInfo[i];
-            if ((verb == 2) || ((verb == 1) && (uaItem->stat == 1)))  // verb == 1 only the bad, verb > 1 all
-                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",
-                   uaItem->itemIdx,uaItem->prec->name,
-                   uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
-                   uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
-                   uaItem->stat,uaItem->ItemPath );
-            else
-                errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %5g %4u %4s %s\n",
-                   uaItem->itemIdx,uaItem->prec->name,
-                   uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
-                   uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
-                   uaItem->stat, uaItem->samplingInterval, uaItem->queueSize,
-                   ( uaItem->discardOldest ? "old" : "new" ), uaItem->ItemPath );
+
+    if(verb<1)
+        return;
+
+    // For new cases set default to next case, and new on to default, for verb >= maxCase
+    switch(verb){
+    case 1: errlogPrintf("Signals with connection status BAD only:\n");
+    case 2: errlogPrintf("idx record Name           epics Type         opcUa Type      Stat NS:PATH\n");
+            break;
+    default:errlogPrintf("idx record Name           epics Type         opcUa Type      Stat Sampl QSiz Drop NS:PATH\n");
+    }
+
+    for (unsigned int i=0; i< vUaItemInfo.size(); i++) {
+        OPCUA_ItemINFO* uaItem = vUaItemInfo[i];
+        switch(verb){
+        case 1: if(uaItem->stat == 0)  // only the bad
+                break;
+        case 2: errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %s\n",
+                    uaItem->itemIdx,uaItem->prec->name,
+                    uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                    uaItem->stat,uaItem->ItemPath );
+                break;
+        default:errlogPrintf("%3d %-20s %2d,%-15s %2d:%-15s %2d %5g %4u %4s %s\n",
+                    uaItem->itemIdx,uaItem->prec->name,
+                    uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
+                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
+                    uaItem->stat, uaItem->samplingInterval, uaItem->queueSize,
+                    ( uaItem->discardOldest ? "old" : "new" ), uaItem->ItemPath );
         }
+
     }
 }
 
@@ -807,6 +816,113 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem,int debug)
     return 0;
 }
 
+// return 0:ok, 1:data loss may occur, 2:not supported OPCUA-Type
+// supposed EPICS-types: double, int32, uint32. As long as VAL,RVAL fields have no other types!
+int checkDataLoss(int opctype, epicsType epicstype, int isWrite)
+{
+
+    if(isWrite) { // data loss warning for OUT-records
+        switch(opctype){
+        case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
+            switch(epicstype){
+            case epicsFloat64T: return 1;
+            default:;
+            }
+            break;
+        case OpcUaType_SByte:
+        case OpcUaType_Byte:
+        case OpcUaType_Int16:
+        case OpcUaType_UInt16: return 1;
+            break;
+
+        case OpcUaType_Int32:
+            switch(epicstype){//REC_Datatype(EPICS_Datatype)
+            case epicsUInt32T:
+            case epicsFloat64T: return 1;
+            default:;
+            }
+            break;
+        case OpcUaType_UInt32:
+            switch(epicstype){//REC_Datatype(EPICS_Datatype)
+            case epicsInt32T:
+            case epicsFloat64T: return 1;  break;
+            default:;
+            }
+            break;
+        case OpcUaType_Float:
+            switch(epicstype){//REC_Datatype(EPICS_Datatype)
+            case epicsFloat64T: return 1;  break;
+            default:;
+            }
+            break;
+        case OpcUaType_Double:
+            break;
+        case OpcUaType_String:
+            if(epicstype != epicsOldStringT)
+                return 1;
+            break;
+        default:
+            return 2;
+        }
+    }
+    else { // data loss warning for IN-records
+        switch(epicstype){//REC_Datatype(EPICS_Datatype)
+        case epicsInt32T:
+            switch(opctype){
+            case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
+            case OpcUaType_SByte:
+            case OpcUaType_Byte:
+            case OpcUaType_Int16:
+            case OpcUaType_UInt16:
+            case OpcUaType_Int32: return 0;
+            case OpcUaType_UInt32:
+            case OpcUaType_Float:
+            case OpcUaType_Double:
+            case OpcUaType_String: return 1;
+            default:
+                return 2;
+            }
+        case epicsUInt32T:
+                switch(opctype){
+                case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
+                case OpcUaType_SByte:
+                case OpcUaType_Byte:
+                case OpcUaType_Int16:
+                case OpcUaType_UInt16:
+                case OpcUaType_UInt32: return 0;
+                case OpcUaType_Int32:
+                case OpcUaType_Float:
+                case OpcUaType_Double:
+                case OpcUaType_String: return 1;
+                default:
+                    return 2;
+                }
+        case epicsFloat64T: return 0;
+                switch(opctype){
+                case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
+                case OpcUaType_SByte:
+                case OpcUaType_Byte:
+                case OpcUaType_Int16:
+                case OpcUaType_UInt16:
+                case OpcUaType_UInt32:
+                case OpcUaType_Int32:
+                case OpcUaType_Float:
+                case OpcUaType_Double: return 0;
+                case OpcUaType_String: return 1;
+                default:
+                    return 2;
+                }
+        case epicsOldStringT:
+            if(opctype != OpcUaType_String)
+                return 1;
+            break;
+        default: return 2;
+        }
+
+    }
+    return 0;
+}
+
 /***************** just for debug ********************/
 
 void print_OpcUa_DataValue(_OpcUa_DataValue *d)
@@ -864,7 +980,7 @@ long OpcReadValues(int verbose,int monitored)
         pMyClient->setDebug(debugStat);
         return 1;
     }
-    status = pMyClient->readFunc(values,serviceSettings,diagnosticInfos );
+    status = pMyClient->readFunc(values,serviceSettings,diagnosticInfos,OpcUa_Attributes_Value );
     if (status.isGood()) {
         if(verbose) errlogPrintf("READ VALUES success: %i\n",values.length());
         for(OpcUa_UInt32 j=0;j<values.length();j++) {
@@ -1071,7 +1187,7 @@ long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
     tempValue.copyTo(&nodesToWrite[0].Value.Value);
 
     status = pMyClient->writeFunc(serviceSettings,nodesToWrite,results,diagnosticInfos);
-    if ( status.isBad()  )
+    if ( status.isBad()  ) // write on a read only node is notBad. Can't be checked here!!
     {
         if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",uaItem->prec->name,status.toString().toUtf8());
         return 1;
@@ -1087,15 +1203,20 @@ long OpcUaSetupMonitors(void)
 {
     UaStatus status;
     UaDataValues values;
+    UaDataValues attribs; // OpcUa_Attributes_UserAccessLevel
     ServiceSettings     serviceSettings;
     UaDiagnosticInfos   diagnosticInfos;
-    int dataLossWarning = 0;
 
     if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors Browsepath ok len = %d\n",(int)pMyClient->vUaNodeId.size());
 
     if(pMyClient->getNodes() )
         return 1;
-    status = pMyClient->readFunc(values, serviceSettings, diagnosticInfos);
+    status = pMyClient->readFunc(values, serviceSettings, diagnosticInfos,OpcUa_Attributes_Value);
+    if (status.isBad()) {
+        errlogPrintf("OpcUaSetupMonitors: READ VALUES failed with status %s\n", status.toString().toUtf8());
+        return -1;
+    }
+    status = pMyClient->readFunc(attribs, serviceSettings, diagnosticInfos, OpcUa_Attributes_UserAccessLevel);
     if (status.isBad()) {
         errlogPrintf("OpcUaSetupMonitors: READ VALUES failed with status %s\n", status.toString().toUtf8());
         return -1;
@@ -1104,73 +1225,35 @@ long OpcUaSetupMonitors(void)
     for(OpcUa_UInt32 i=0; i<values.length(); i++) {
         OPCUA_ItemINFO* uaItem = pMyClient->vUaItemInfo[i];
         if (OpcUa_IsBad(values[i].StatusCode)) {
-            errlogPrintf("%4d %s: Read item '%s' failed with status %s\n",uaItem->itemIdx,
-                         uaItem->prec->name, uaItem->ItemPath,
+            errlogPrintf("%s: Read node '%s' failed with status %s\n",uaItem->prec->name, uaItem->ItemPath,
                          UaStatus(values[i].StatusCode).toString().toUtf8());
         }
         else {
+            if(OpcUa_IsBad(attribs[i].StatusCode))
+                errlogPrintf("%s: Read attribs' failed with status %s\n",uaItem->prec->name,
+                             UaStatus(attribs[i].StatusCode).toString().toUtf8());
+            else {
+                UaVariant var = attribs[i].Value;
+                var.toUInt32(uaItem->userAccLvl);
+            }
             if(values[i].Value.ArrayType && !uaItem->isArray) {
-                if(pMyClient->getDebug()) errlogPrintf("OpcUaSetupMonitors %s: Don't Support Array Data\n",uaItem->prec->name);
+                errlogPrintf("%s: Don't Support Array Data\n",uaItem->prec->name);
             }
             else {
-
                 epicsMutexLock(uaItem->flagLock);
                 uaItem->itemDataType = (int) values[i].Value.Datatype;
                 uaItem->isArray = 0;
                 epicsMutexUnlock(uaItem->flagLock);
                 if(pMyClient->getDebug() > 3) errlogPrintf("%4d %15s: %p flagSuppressWrite: %d\n",uaItem->itemIdx,uaItem->prec->name,uaItem,uaItem->flagSuppressWrite);
-                switch((int)uaItem->itemDataType){
-                case OpcUaType_Boolean: // allow integer types to avoid warning for all booleans!
-                    switch(uaItem->recDataType){
-                    case epicsFloat64T: dataLossWarning++;
-                    default:;
-                    }
-                    break;
-                case OpcUaType_SByte:
-                case OpcUaType_Byte:
-                case OpcUaType_Int16:
-                case OpcUaType_UInt16:  dataLossWarning++;
-                    break;
 
-                case OpcUaType_Int32:
-                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-                    case epicsUInt32T:
-                    case epicsFloat64T:  dataLossWarning++;  break;
-                    default:;
-                    }
-                    break;
-                case OpcUaType_UInt32:
-                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-                    case epicsInt32T:
-                    case epicsFloat64T:  dataLossWarning++;  break;
-                    default:;
-                    }
-                    break;
-                case OpcUaType_Float:
-                    switch(uaItem->recDataType){//REC_Datatype(EPICS_Datatype)
-                    case epicsFloat64T:  dataLossWarning++;  break;
-                    default:;
-                    }
-                    break;
-                case OpcUaType_Double:
-                    break;
-                case OpcUaType_String:
-                    if(uaItem->recDataType != epicsOldStringT)
-                        dataLossWarning++;
-                    break;
-                default:
-                    errlogPrintf("%20s opc data type not supported: %d,%s", uaItem->prec->name, uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType));
+                if(checkDataLoss(uaItem->itemDataType,uaItem->recDataType,(int) uaItem->inpDataType)) {
+                    errlogPrintf("%s: write may loose data: %s -> %s\n",uaItem->prec->name,epicsTypeNames[uaItem->recDataType],
+                                 variantTypeStrings(uaItem->itemDataType));
                 }
-                if(dataLossWarning) {
-                    if(dataLossWarning==1)
-                        errlogPrintf("WARNING channels may loose data:   Epics Type    -> OpcUa Type\n");
-                    else if(dataLossWarning==2) {
-                        errlogPrintf("%33s %2d,%s -> %2d,%s\n",uaItem->prec->name,
-                                     uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
-                                uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType));
-                        dataLossWarning--;
-                    }
-                }
+                if( (uaItem->userAccLvl & 0x2) == 0 && ((int) uaItem->inpDataType))    // no write access to out record
+                    errlogPrintf("%s: no write Access!\n",uaItem->prec->name);
+                if( !(uaItem->userAccLvl & 0x1) )                                  // no read access
+                    errlogPrintf("%s: no read Access!\n",uaItem->prec->name);
             }
         }
     }
