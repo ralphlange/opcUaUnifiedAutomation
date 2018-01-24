@@ -18,25 +18,26 @@
 /*  now with translate path, 
     Start with server: elbe:/home/pc/kuner/ctl/OPC_UA/uasdkDebian7/bin/server_lesson03
 **************************************************/
+
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
-// toolbox header
-#include "uaplatformlayer.h"
-#include "uabase.h"
-#include "uaclientsdk.h"
-#include "uasession.h"
-
-#include"dbCommon.h" // need dummy prec for print in Subscription onDataChange callback
-#include"epicsMutex.h"
-#include "drvOpcUa.h"
 
 #ifdef _WIN32
     #include <windows.h>
-    #include "getopt.h"
+    #include <getopt.h>
 #endif
 
+#include <uaplatformlayer.h>
+#include <uabase.h>
+#include <uaclientsdk.h>
+#include <uasession.h>
+
+#include <dbCommon.h> // need dummy prec for print in Subscription onDataChange callback
+#include <epicsMutex.h>
+
+#include "drvOpcUa.h"
 
 UaString g_startNode;
 UaString g_serverUrl;

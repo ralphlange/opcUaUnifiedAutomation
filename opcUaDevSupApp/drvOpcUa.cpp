@@ -28,7 +28,6 @@
 #include <boost/regex.hpp>
 #include <boost/lexical_cast.hpp>
 
-// EPICS LIBS
 #define epicsTypesGLOBAL
 #include <epicsTypes.h>
 #include <epicsPrint.h>
@@ -42,11 +41,10 @@
 #include <devLib.h>
 #include <iocsh.h>
 
-// toolbox header
-#include "uaplatformlayer.h"
-#include "uabase.h"
-#include "uaclientsdk.h"
-#include "uasession.h"
+#include <uaplatformlayer.h>
+#include <uabase.h>
+#include <uaclientsdk.h>
+#include <uasession.h>
 
 #include "drvOpcUa.h"
 #include "devUaSubscription.h"

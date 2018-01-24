@@ -19,9 +19,7 @@
 #ifndef __DRVOPCUA_H
 #define __DRVOPCUA_H
 
-// toolbox header
-
-#include <devOpcUa.h>
+#include "devOpcUa.h"
 
     typedef enum {BOTH=0,NODEID,BROWSEPATH,BROWSEPATH_CONCAT,GETNODEMODEMAX} GetNodeMode;
     const char *variantTypeStrings(int type);
@@ -41,4 +39,5 @@
     extern "C" {
     extern long opcUa_io_report (int); /* Write IO report output to stdout. */
     }
+
 #endif /* ifndef __DRVOPCUA_H */
