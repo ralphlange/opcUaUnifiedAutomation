@@ -38,6 +38,7 @@ struct OPCUA_MonitoredItem;
 typedef struct OPCUA_ItemINFO {
     ELLNODE node;
     const char *elementName;  /* Name of structure element; NULL if top element */
+    int elementIndex;         /* Index of structure element; 0 if unknown */
     struct OPCUA_MonitoredItem *mItem; /* Monitored item (parent) */
     int itemDataType;         /* OPCUA data type */
 

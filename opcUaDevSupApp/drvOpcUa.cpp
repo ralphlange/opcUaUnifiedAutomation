@@ -134,6 +134,7 @@ public:
     UaStatus subscribe();
     UaStatus unsubscribe();
     void setBadQuality();
+    void clearItemCache();
 
     void addOPCUA_Item(const char *itemPath, OPCUA_ItemINFO *h);
     long getNodes();
@@ -273,6 +274,7 @@ void DevUaClient::connectionStatusChanged(
     {
     case UaClient::ConnectionErrorApiReconnect:
     case UaClient::ServerShutdown:
+        this->clearItemCache();
         this->setBadQuality();
         this->unsubscribe();
         break;
@@ -314,6 +316,26 @@ void DevUaClient::setBadQuality()
         (*it)->stat = 1;
         callbackRequest(&((*it)->callback));
         scanIoRequest((*it)->ioscanpvt);
+    }
+}
+
+void DevUaClient::clearItemCache()
+{
+    for (std::vector<OPCUA_MonitoredItem *>::iterator it = vUaItemInfo.begin(); it != vUaItemInfo.end(); ++it) {
+        for (ELLNODE *item = ellFirst(&(*it)->inItems); item; item = ellNext(item)) {
+            OPCUA_ItemINFO *uaItem = (OPCUA_ItemINFO *) item;
+            epicsMutexLock(uaItem->lock);
+            uaItem->elementIndex = -1;
+            uaItem->itemDataType = OpcUaType_Null;
+            epicsMutexUnlock(uaItem->lock);
+        }
+        if ((*it)->outItem) {
+            OPCUA_ItemINFO *uaItem = (*it)->outItem;
+            epicsMutexLock(uaItem->lock);
+            uaItem->elementIndex = -1;
+            uaItem->itemDataType = OpcUaType_Null;
+            epicsMutexUnlock(uaItem->lock);
+        }
     }
 }
 
@@ -723,25 +745,13 @@ UaStatus DevUaClient::readAndSetItems(void)
         if (OpcUa_IsGood(values[i].StatusCode)) {
             OPCUA_MonitoredItem *pitem = vUaItemInfo.at(i);
             UaVariant tempValue = values[i].Value;
-            OPCUA_ItemINFO *pinfo;
             epicsTimeStamp ts;
 
             UaDateTime dt(values[i].ServerTimestamp); //FIXME: Make configurable
             ts.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
             ts.nsec         = dt.msec()*1000000L; // msec is 100ns steps
 
-            if (ellCount(&pitem->inItems)) {
-                for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
-                     pinfo;
-                     pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node))
-                    m_pDevUaSubscription->distributeData(tempValue, ts, pinfo, debug);
-                scanIoRequest(pitem->ioscanpvt);
-            }
-            if (pitem->outItem) {
-                pinfo = (OPCUA_ItemINFO *) pitem->outItem;
-                m_pDevUaSubscription->distributeData(tempValue, ts, pinfo, debug);
-                callbackRequest(&pitem->callback);
-            }
+            m_pDevUaSubscription->distributeData(tempValue, ts, pitem, debug);
         }
     }
     return result;
@@ -754,7 +764,7 @@ void DevUaClient::itemStat(int verb)
     if(verb>0) {
         if (verb == 1) errlogPrintf("(showing only items with bad status)\n");
         errlogPrintf("Sts Namespace:Item\n");
-        errlogPrintf("        RW Element         Record name           EPICS Type         opcUa Type\n");
+        errlogPrintf("        RW idx:Element         Record name           EPICS Type         opcUa Type\n");
         for (std::vector<OPCUA_MonitoredItem *>::iterator it = vUaItemInfo.begin(); it != vUaItemInfo.end(); ++it) {
             if (verb > 1 || (verb == 1 && (*it)->stat == 1)) {
                 OPCUA_ItemINFO *uaItem;
@@ -763,13 +773,15 @@ void DevUaClient::itemStat(int verb)
                     for (uaItem = (OPCUA_ItemINFO *) ellFirst(&(*it)->inItems);
                          uaItem;
                          uaItem = (OPCUA_ItemINFO *) ellNext(&uaItem->node))
-                        errlogPrintf("        rd %-15s %-20s %2d:%-15s %2d:%-15s\n",
+                        errlogPrintf("        rd %3d:%-15s %-20s %2d:%-15s %2d:%-15s\n",
+                                     uaItem->elementIndex,
                                      uaItem->elementName ? uaItem->elementName : "-",
                                      uaItem->prec->name,
                                      uaItem->recDataType, epicsTypeNames[uaItem->recDataType],
                                 uaItem->itemDataType, variantTypeStrings(uaItem->itemDataType));
                 if ((uaItem = (*it)->outItem))
-                    errlogPrintf("        wr %-15s %-20s %2d:%-15s %2d:%-15s\n",
+                    errlogPrintf("        wr %3d:%-15s %-20s %2d:%-15s %2d:%-15s\n",
+                                 uaItem->elementIndex,
                                  uaItem->elementName ? uaItem->elementName : "-",
                                  uaItem->prec->name,
                                  uaItem->recDataType, epicsTypeNames[uaItem->recDataType],
@@ -790,8 +802,13 @@ inline int maxDebug(int dbg,int recDbg) {
 epicsRegisterFunction(maxDebug);
 
 /* write variant value from opcua read or callback to - whatever is determined in uaItem*/
-long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, int debug)
+long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, const epicsTimeStamp ts, int debug)
 {
+    epicsMutexLock(uaItem->lock);
+
+    if (uaItem->prec->tse == epicsTimeEventDeviceTime)
+        uaItem->prec->time = ts;
+
     if(val.isArray()){
         UaByteArray   aByte;
         UaInt16Array  aInt16;
@@ -835,11 +852,13 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, int debug)
                 break;
             default:
                 if(debug >= 2) errlogPrintf("%s setRecVal(): Can't convert array data type\n",uaItem->prec->name);
+                epicsMutexUnlock(uaItem->lock);
                 return 1;
             }
         }
         else {
             if(debug >= 2) errlogPrintf("%s setRecVal() Error record arraysize %d < OpcItem Size %d\n", uaItem->prec->name,val.arraySize(),uaItem->arraySize);
+            epicsMutexUnlock(uaItem->lock);
             return 1;
         }
     }      // end array
@@ -903,9 +922,11 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, int debug)
         default:
             if(debug>= 2)
                     errlogPrintf("%s setRecVal() Error unsupported recDataType '%s'\n",uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
+            epicsMutexUnlock(uaItem->lock);
             return 1;
         }
     }
+    epicsMutexUnlock(uaItem->lock);
     return 0;
 }
 

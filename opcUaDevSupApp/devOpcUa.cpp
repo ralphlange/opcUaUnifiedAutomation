@@ -290,6 +290,7 @@ long init_common (dbCommon *prec, struct link* plnk, const epicsType recDataType
     }
 
     prec->dpvt = uaItem;
+    uaItem->elementIndex = -1;
     uaItem->recDataType = recDataType;
     uaItem->pRecVal = val;
     uaItem->prec = prec;

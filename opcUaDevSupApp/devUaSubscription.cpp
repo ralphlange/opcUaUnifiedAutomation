@@ -57,7 +57,9 @@ void DevUaSubscription::subscriptionStatusChanged(
                  status.toString().toUtf8());
 }
 
-void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeStamp ts, OPCUA_ItemINFO *pinfo, const int debug) {
+void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeStamp ts, OPCUA_MonitoredItem *pitem, const int debug) {
+    OPCUA_ItemINFO *pinfo;
+
     if (value.type() == OpcUaType_ExtensionObject) {
         UaExtensionObject extensionObject;
         value.toExtensionObject(extensionObject);
@@ -66,45 +68,75 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
         UaStructureDefinition definition = m_pSession->structureDefinition(extensionObject.encodingTypeId());
         if (!definition.isNull()) {
             if (!definition.isUnion()) {
+                // structure
                 // Decode the ExtensionObject to a UaGenericValue to provide access to the structure fields
                 UaGenericStructureValue genericValue;
                 genericValue.setGenericValue(extensionObject, definition);
 
-                for (int i = 0; i < definition.childrenCount(); i++) {
-                    if (genericValue.value(i).type() == OpcUaType_ExtensionObject) {
-                        errlogPrintf("element %d: nested structures not supported\n", i);
-                    } else {
-                        if (strcmp(definition.child(i).name().toUtf8(), pinfo->elementName) == 0) {
-                            epicsMutexLock(pinfo->lock);
-                            pinfo->itemDataType = genericValue.value(i).type();
-                            setRecVal(genericValue.value(i), pinfo, maxDebug(debug, pinfo->debug)); //FIXME: Buffer locally!
-                            if (pinfo->prec->tse == epicsTimeEventDeviceTime)
-                                pinfo->prec->time = ts;
-                            if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
-                            epicsMutexUnlock(pinfo->lock);
+                if (ellCount(&pitem->inItems)) {
+                    for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                         pinfo;
+                         pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                        if (pinfo->elementName && pinfo->elementIndex == -1) {
+                            if (debug > 3) errlogPrintf("Searching index for element %-20s (record %s)\n",pinfo->elementName,pinfo->prec->name);
+                            for (int i = 0; i < definition.childrenCount(); i++) {
+                                if (genericValue.value(i).type() == OpcUaType_ExtensionObject) {
+                                    errlogPrintf("element %d: nested structures not supported\n", i);
+                                } else {
+                                    if (strcmp(definition.child(i).name().toUtf8(), pinfo->elementName) == 0) {
+                                        epicsMutexLock(pinfo->lock);
+                                        pinfo->itemDataType = genericValue.value(i).type();
+                                        pinfo->elementIndex = i;
+                                        if (debug > 3) errlogPrintf("  ... found element %-20s (record %s) at index %d.\n",pinfo->elementName,pinfo->prec->name,pinfo->elementIndex);
+                                        epicsMutexUnlock(pinfo->lock);
+                                    }
+                                }
+                                if (pinfo->elementIndex == -1) pinfo->elementIndex = -2;
+                            }
+                        }
+                        if (pinfo->elementIndex >=0) {
+                            setRecVal(genericValue.value(pinfo->elementIndex), pinfo, ts, maxDebug(debug, pinfo->debug));
+                            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
                         }
                     }
+                    scanIoRequest(pitem->ioscanpvt);
+                }
+                if ((pinfo = pitem->outItem)) {
+                    errlogPrintf("%-20s: writing structures not supported\n", pinfo->prec->name);
                 }
             } else {
                 // union
-                // Decode the ExtensionObject to a UaGenericUnionValue to provide access to the structure fields
+                // Decode the ExtensionObject to a UaGenericUnionValue to provide access to the tag and value
                 UaGenericUnionValue genericValue;
                 genericValue.setGenericUnion(extensionObject, definition);
 
                 int switchValue = genericValue.switchValue();
                 if (switchValue == 0) {
-                    errlogPrintf("union value not set\n");
+                    errlogPrintf("union tag not set\n");
                 } else {
                     if (genericValue.value().type() == OpcUaType_ExtensionObject) {
-                        errlogPrintf("union: nested structures not supported\n");
+                        errlogPrintf("union: nested structure not supported\n");
                     } else {
-                        epicsMutexLock(pinfo->lock);
-                        pinfo->itemDataType = genericValue.value().type();
-                        setRecVal(genericValue.value(), pinfo, maxDebug(debug, pinfo->debug)); //FIXME: Buffer locally!
-                        if (pinfo->prec->tse == epicsTimeEventDeviceTime)
-                            pinfo->prec->time = ts;
-                        if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
-                        epicsMutexUnlock(pinfo->lock);
+                        if (ellCount(&pitem->inItems)) {
+                            for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                                 pinfo;
+                                 pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                                epicsMutexLock(pinfo->lock);
+                                pinfo->itemDataType = genericValue.value().type();
+                                epicsMutexUnlock(pinfo->lock);
+                                setRecVal(genericValue.value(), pinfo, ts, maxDebug(debug, pinfo->debug));
+                                if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                            }
+                            scanIoRequest(pitem->ioscanpvt);
+                        }
+                        if ((pinfo = pitem->outItem)) {
+                            epicsMutexLock(pinfo->lock);
+                            pinfo->itemDataType = genericValue.value().type();
+                            epicsMutexUnlock(pinfo->lock);
+                            setRecVal(genericValue.value(), pinfo, ts, maxDebug(debug, pinfo->debug));
+                            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                            callbackRequest(&pitem->callback);
+                        }
                     }
                 }
             }
@@ -112,19 +144,34 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
             errlogPrintf("Cannot get a structure definition for %s - check access to type dictionary\n",
                          extensionObject.dataTypeId().toString().toUtf8());
     } else {
-        if (value.isArray() != pinfo->isArray) {
-             if (debug)
-                 errlogPrintf("DevUaClient::readAndSetItems() %s data type mismatch: %s OPCUA data for %s record\n",
-                              pinfo->prec->name, value.isArray() ? "array" : "scalar",
-                              pinfo->isArray ? "array" : "scalar");
-        } else {
+        // basic type
+        if (ellCount(&pitem->inItems)) {
+            for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                 pinfo;
+                 pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                if (value.isArray() != pinfo->isArray) {
+                     if (debug)
+                         errlogPrintf("DevUaClient::readAndSetItems() %s data type mismatch: %s OPCUA data for %s record\n",
+                                      pinfo->prec->name, value.isArray() ? "array" : "scalar",
+                                      pinfo->isArray ? "array" : "scalar");
+                } else {
+                    epicsMutexLock(pinfo->lock);
+                    pinfo->itemDataType = value.type();
+                    epicsMutexUnlock(pinfo->lock);
+                    setRecVal(value, pinfo, ts, maxDebug(debug, pinfo->debug));
+                    if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
+                    scanIoRequest(pitem->ioscanpvt);
+                }
+            }
+        }
+
+        if ((pinfo = pitem->outItem)) {
             epicsMutexLock(pinfo->lock);
             pinfo->itemDataType = value.type();
-            setRecVal(value, pinfo, maxDebug(debug, pinfo->debug)); //FIXME: Buffer locally!
-            if (pinfo->prec->tse == epicsTimeEventDeviceTime)
-                pinfo->prec->time = ts;
-            if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
             epicsMutexUnlock(pinfo->lock);
+            setRecVal(value, pinfo, ts, maxDebug(debug, pinfo->debug));
+            if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
+            callbackRequest(&pitem->callback);
         }
     }
 }
@@ -140,10 +187,10 @@ void DevUaSubscription::dataChange(
     char timeBuf[30];
     getTime(timeBuf);
 
-    if (debug > 2) errlogPrintf("dataChange %s\n",timeBuf);
+    if (debug > 2) errlogPrintf("dataChange @ IOC time %s\n",timeBuf);
     for (i = 0; i < dataNotifications.length(); i++)
     {
-        OPCUA_MonitoredItem* pitem = m_monitoredItems->at(dataNotifications[i].ClientHandle);
+        OPCUA_MonitoredItem *pitem = m_monitoredItems->at(dataNotifications[i].ClientHandle);
         if (debug > 3)
             errlogPrintf("\t%s\n", pitem->itemPath);
 
@@ -155,25 +202,13 @@ void DevUaSubscription::dataChange(
             pitem->stat = 0;
 
         UaVariant tempValue(dataNotifications[i].Value.Value);
-        OPCUA_ItemINFO *pinfo;
         epicsTimeStamp ts;
 
         UaDateTime dt(dataNotifications[i].Value.ServerTimestamp); //FIXME: Make configurable
         ts.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
         ts.nsec         = dt.msec()*1000000L; // msec is 100ns steps
 
-        if (ellCount(&pitem->inItems)) {
-            for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
-                 pinfo;
-                 pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node))
-                distributeData(tempValue, ts, pinfo, debug);
-            scanIoRequest(pitem->ioscanpvt);
-        }
-        if (pitem->outItem) {
-            pinfo = (OPCUA_ItemINFO *) pitem->outItem;
-            distributeData(tempValue, ts, pinfo, debug);
-            callbackRequest(&pitem->callback);
-        }
+        distributeData(tempValue, ts, pitem, debug);
     }
 }
 
