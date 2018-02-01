@@ -57,7 +57,8 @@ void DevUaSubscription::subscriptionStatusChanged(
                  status.toString().toUtf8());
 }
 
-void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeStamp ts, OPCUA_MonitoredItem *pitem, const int debug) {
+void DevUaSubscription::distributeData(const UaVariant &value, OPCUA_MonitoredItem *pitem, const int debug)
+{
     OPCUA_ItemINFO *pinfo;
 
     if (value.type() == OpcUaType_ExtensionObject) {
@@ -95,7 +96,7 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
                             }
                         }
                         if (pinfo->elementIndex >=0) {
-                            setRecVal(genericValue.value(pinfo->elementIndex), pinfo, ts, maxDebug(debug, pinfo->debug));
+                            setRecVal(genericValue.value(pinfo->elementIndex), pinfo, maxDebug(debug, pinfo->debug));
                             if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
                         }
                     }
@@ -124,7 +125,7 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
                                 epicsMutexLock(pinfo->lock);
                                 pinfo->itemDataType = genericValue.value().type();
                                 epicsMutexUnlock(pinfo->lock);
-                                setRecVal(genericValue.value(), pinfo, ts, maxDebug(debug, pinfo->debug));
+                                setRecVal(genericValue.value(), pinfo, maxDebug(debug, pinfo->debug));
                                 if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
                             }
                             scanIoRequest(pitem->ioscanpvt);
@@ -133,7 +134,7 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
                             epicsMutexLock(pinfo->lock);
                             pinfo->itemDataType = genericValue.value().type();
                             epicsMutexUnlock(pinfo->lock);
-                            setRecVal(genericValue.value(), pinfo, ts, maxDebug(debug, pinfo->debug));
+                            setRecVal(genericValue.value(), pinfo, maxDebug(debug, pinfo->debug));
                             if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
                             callbackRequest(&pitem->callback);
                         }
@@ -158,8 +159,8 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
                     epicsMutexLock(pinfo->lock);
                     pinfo->itemDataType = value.type();
                     epicsMutexUnlock(pinfo->lock);
-                    setRecVal(value, pinfo, ts, maxDebug(debug, pinfo->debug));
-                    if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
+                    setRecVal(value, pinfo, maxDebug(debug, pinfo->debug));
+                    if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
                     scanIoRequest(pitem->ioscanpvt);
                 }
             }
@@ -169,8 +170,8 @@ void DevUaSubscription::distributeData(const UaVariant &value, const epicsTimeSt
             epicsMutexLock(pinfo->lock);
             pinfo->itemDataType = value.type();
             epicsMutexUnlock(pinfo->lock);
-            setRecVal(value, pinfo, ts, maxDebug(debug, pinfo->debug));
-            if (debug > 3) errlogPrintf("Wrote data into %-20s (info %p)\n",pinfo->prec->name,pinfo);
+            setRecVal(value, pinfo, maxDebug(debug, pinfo->debug));
+            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
             callbackRequest(&pitem->callback);
         }
     }
@@ -202,13 +203,16 @@ void DevUaSubscription::dataChange(
             pitem->stat = 0;
 
         UaVariant tempValue(dataNotifications[i].Value.Value);
-        epicsTimeStamp ts;
 
-        UaDateTime dt(dataNotifications[i].Value.ServerTimestamp); //FIXME: Make configurable
-        ts.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
-        ts.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+        UaDateTime dt;
+        dt = dataNotifications[i].Value.ServerTimestamp;
+        pitem->tsSrv.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+        pitem->tsSrv.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+        dt = dataNotifications[i].Value.SourceTimestamp;
+        pitem->tsSrc.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+        pitem->tsSrc.nsec         = dt.msec()*1000000L; // msec is 100ns steps
 
-        distributeData(tempValue, ts, pitem, debug);
+        distributeData(tempValue, pitem, debug);
     }
 }
 

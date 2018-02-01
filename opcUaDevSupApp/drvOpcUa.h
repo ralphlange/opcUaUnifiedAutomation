@@ -36,7 +36,7 @@
     extern long OpcWriteValue(int opcUaItemIndex,double val,int verbose);
     extern int maxDebug(int dbg,int recDbg);
 
-    extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, const epicsTimeStamp ts, int debug);
+    extern long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, int debug);
     extern long opcUa_init(UaString &g_serverUrl, UaString &g_applicationCertificate, UaString &g_applicationPrivateKey, UaString &nodeName, int autoConn, int debug);
 extern "C" {
     extern long opcUa_io_report (int); /* Write IO report output to stdout. */

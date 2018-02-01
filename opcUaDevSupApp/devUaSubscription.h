@@ -49,7 +49,7 @@ public:
     // FIXME: 2nd arg should be reference.
     UaStatus createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_MonitoredItem *> *monitoredItems);
 
-    void distributeData(const UaVariant &value, const epicsTimeStamp ts, OPCUA_MonitoredItem *pitem, const int debug);
+    void distributeData(const UaVariant &value, OPCUA_MonitoredItem *pitem, const int debug);
 
     int debug;              // debug output independent from single channels
 private:

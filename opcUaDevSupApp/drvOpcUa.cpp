@@ -36,11 +36,13 @@
 #include <epicsExport.h>
 #include <registryFunction.h>
 #include <dbCommon.h>
+#include <dbAccess.h>
 #include <devSup.h>
 #include <drvSup.h>
 #include <devLib.h>
 #include <iocsh.h>
 #include <ellLib.h>
+#include <callback.h>
 
 #include <uaplatformlayer.h>
 #include <uabase.h>
@@ -206,24 +208,42 @@ DevUaClient* pMyClient = NULL;
 
 extern "C" {
                                     /* DRVSET */
-    struct {
-        long      number;
-        DRVSUPFUN report;
-        DRVSUPFUN init;
-    }  drvOpcUa = {
-        2,
-        (DRVSUPFUN) opcUa_io_report,
-        NULL
-    };
-    epicsExportAddress(drvet,drvOpcUa);
+struct {
+    long      number;
+    DRVSUPFUN report;
+    DRVSUPFUN init;
+}  drvOpcUa = {
+    2,
+    (DRVSUPFUN) opcUa_io_report,
+    NULL
+};
+epicsExportAddress(drvet,drvOpcUa);
 
 
-    epicsRegisterFunction(opcUa_io_report);
-    long opcUa_io_report (int level) /* Write IO report output to stdout. */
-    {
-        pMyClient->itemStat(level);
-        return 0;
-    }
+epicsRegisterFunction(opcUa_io_report);
+long opcUa_io_report (int level) /* Write IO report output to stdout. */
+{
+    pMyClient->itemStat(level);
+    return 0;
+}
+
+static void processCallback(CALLBACK *pcallback)
+{
+    void *pUsr;
+    dbCommon *pRec;
+    OPCUA_ItemINFO *pinfo;
+
+    callbackGetUser(pUsr, pcallback);
+    pRec = static_cast<dbCommon *>(pUsr);
+    if (!pRec) return;
+    pinfo = (OPCUA_ItemINFO *)pRec->dpvt;
+    dbScanLock(pRec);
+    pinfo->flagSuppressWrite = 1;
+    dbProcess(pRec);
+    pinfo->flagSuppressWrite = 0;
+    dbScanUnlock(pRec);
+}
+
 }
 
 DevUaClient::DevUaClient(int autoCon=1,int debug=0)
@@ -304,6 +324,7 @@ void DevUaClient::setBadQuality()
     epicsTimeGetCurrent(&now);
 
     for (std::vector<OPCUA_MonitoredItem *>::iterator it = vUaItemInfo.begin(); it != vUaItemInfo.end(); ++it) {
+        (*it)->stat = 1;
         for (ELLNODE *item = ellFirst(&(*it)->inItems); item; item = ellNext(item)) {
             OPCUA_ItemINFO *uaItem = (OPCUA_ItemINFO *) item;
             uaItem->prec->time = now;
@@ -312,9 +333,8 @@ void DevUaClient::setBadQuality()
             OPCUA_ItemINFO *uaItem = (*it)->outItem;
             uaItem->prec->time = now;
             uaItem->flagSuppressWrite = 1;
+            callbackRequest(&((*it)->callback));
         }
-        (*it)->stat = 1;
-        callbackRequest(&((*it)->callback));
         scanIoRequest((*it)->ioscanpvt);
     }
 }
@@ -360,14 +380,17 @@ void DevUaClient::addOPCUA_Item(const char *itemPath, OPCUA_ItemINFO *h)
         }
         vUaItemInfo.push_back(item);
         item->itemPath = itemPath;
+        item->nodeIndex = vUaItemInfo.size() - 1;
         ellInit(&item->inItems);
         scanIoInit(&item->ioscanpvt);
-        callbackSetProcess(&item->callback, h->prec->prio, h->prec);
     }
 
-    if (h->inpDataType)
+    if (h->inpDataType) {
         item->outItem = h;
-    else
+        callbackSetCallback(processCallback, &item->callback);
+        callbackSetPriority(h->prec->prio, &item->callback);
+        callbackSetUser(h->prec, &item->callback);
+    } else
         ellAdd(&item->inItems, &h->node);
     h->mItem = item;
 
@@ -745,13 +768,16 @@ UaStatus DevUaClient::readAndSetItems(void)
         if (OpcUa_IsGood(values[i].StatusCode)) {
             OPCUA_MonitoredItem *pitem = vUaItemInfo.at(i);
             UaVariant tempValue = values[i].Value;
-            epicsTimeStamp ts;
 
-            UaDateTime dt(values[i].ServerTimestamp); //FIXME: Make configurable
-            ts.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
-            ts.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+            UaDateTime dt;
+            dt = values[i].ServerTimestamp;
+            pitem->tsSrv.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+            pitem->tsSrv.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+            dt = values[i].SourceTimestamp;
+            pitem->tsSrc.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+            pitem->tsSrc.nsec         = dt.msec()*1000000L; // msec is 100ns steps
 
-            m_pDevUaSubscription->distributeData(tempValue, ts, pitem, debug);
+            m_pDevUaSubscription->distributeData(tempValue, pitem, debug);
         }
     }
     return result;
@@ -802,12 +828,9 @@ inline int maxDebug(int dbg,int recDbg) {
 epicsRegisterFunction(maxDebug);
 
 /* write variant value from opcua read or callback to - whatever is determined in uaItem*/
-long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, const epicsTimeStamp ts, int debug)
+long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, int debug)
 {
     epicsMutexLock(uaItem->lock);
-
-    if (uaItem->prec->tse == epicsTimeEventDeviceTime)
-        uaItem->prec->time = ts;
 
     if(val.isArray()){
         UaByteArray   aByte;
@@ -867,14 +890,8 @@ long setRecVal(const UaVariant &val, OPCUA_ItemINFO* uaItem, const epicsTimeStam
                      // internal varVal to be set when processed: IN records.
         epicsType dataType;
 
-        if(uaItem->inpDataType) {   // is OUT Record. TODO: what about records data conversion?
-            toRec = uaItem->pInpVal;
-            dataType = uaItem->inpDataType;
-        }
-        else {
-            toRec = &(uaItem->varVal); // is IN Record
-            dataType = uaItem->recDataType;
-        }
+        toRec = &(uaItem->varVal);
+        dataType = uaItem->inpDataType ? uaItem->inpDataType : uaItem->recDataType;
 
         switch(dataType){
         case epicsInt8T:
@@ -1157,6 +1174,8 @@ long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
         if(pMyClient->getDebug()) errlogPrintf("%s\tOpcUaWriteItems: UaSession::write failed [ret=%s] **\n",uaItem->prec->name,status.toString().toUtf8());
         return 1;
     }
+    //FIXME: Should check results[] to set record alarm on failure
+
     return 0;
 }
 

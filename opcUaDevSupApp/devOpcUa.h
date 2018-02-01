@@ -70,6 +70,9 @@ typedef struct OPCUA_MonitoredItem {
     unsigned int nodeIndex;   /* OPCUA node index */
     int stat;                 /* Status of the OPC connection */
 
+    epicsTimeStamp tsSrv;     /* Server time stamp */
+    epicsTimeStamp tsSrc;     /* Source time stamp */
+
     IOSCANPVT ioscanpvt;      /* Input records' scan request */
     CALLBACK callback;        /* Output records' callback request */
     ELLLIST inItems;          /* List of connected input items */
