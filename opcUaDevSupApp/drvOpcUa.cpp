@@ -790,7 +790,7 @@ void DevUaClient::itemStat(int verb)
     if(verb>0) {
         if (verb == 1) errlogPrintf("(showing only items with bad status)\n");
         errlogPrintf("Sts Namespace:Item\n");
-        errlogPrintf("        RW idx:Element         Record name           EPICS Type         opcUa Type\n");
+        errlogPrintf("        RW idx:Element         Record name           EPICS Type         opcUa Type         TS\n");
         for (std::vector<OPCUA_MonitoredItem *>::iterator it = vUaItemInfo.begin(); it != vUaItemInfo.end(); ++it) {
             if (verb > 1 || (verb == 1 && (*it)->stat == 1)) {
                 OPCUA_ItemINFO *uaItem;
@@ -799,19 +799,21 @@ void DevUaClient::itemStat(int verb)
                     for (uaItem = (OPCUA_ItemINFO *) ellFirst(&(*it)->inItems);
                          uaItem;
                          uaItem = (OPCUA_ItemINFO *) ellNext(&uaItem->node))
-                        errlogPrintf("        rd %3d:%-15s %-20s %2d:%-15s %2d:%-15s\n",
+                        errlogPrintf("        rd %3d:%-15s %-20s %2d:%-15s %2d:%-15s %3s\n",
                                      uaItem->elementIndex,
                                      uaItem->elementName ? uaItem->elementName : "-",
                                      uaItem->prec->name,
                                      uaItem->recDataType, epicsTypeNames[uaItem->recDataType],
-                                uaItem->itemDataType, variantTypeStrings(uaItem->itemDataType));
+                                uaItem->itemDataType, variantTypeStrings(uaItem->itemDataType),
+                                uaItem->useServerTime ? "srv": "src");
                 if ((uaItem = (*it)->outItem))
-                    errlogPrintf("        wr %3d:%-15s %-20s %2d:%-15s %2d:%-15s\n",
+                    errlogPrintf("        wr %3d:%-15s %-20s %2d:%-15s %2d:%-15s %3s\n",
                                  uaItem->elementIndex,
                                  uaItem->elementName ? uaItem->elementName : "-",
                                  uaItem->prec->name,
                                  uaItem->recDataType, epicsTypeNames[uaItem->recDataType],
-                            uaItem->itemDataType, variantTypeStrings(uaItem->itemDataType));
+                            uaItem->itemDataType, variantTypeStrings(uaItem->itemDataType),
+                            uaItem->useServerTime ? "srv": "src");
             }
         }
     }

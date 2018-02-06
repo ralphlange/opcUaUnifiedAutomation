@@ -88,10 +88,12 @@ static  long         get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt);
 static double drvOpcua_DefaultSamplingInterval = -1.0;  // ms (-1 = use publishing interval)
 static int drvOpcua_DefaultQueueSize = 1;               // no queueing
 static int drvOpcua_DefaultDiscardOldest = 1;           // discard oldest value in case of overrun
+static int drvOpcua_DefaultUseServerTime = 1;           // use server timestamp
 
 epicsExportAddress(double, drvOpcua_DefaultSamplingInterval);
 epicsExportAddress(int, drvOpcua_DefaultQueueSize);
 epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
+epicsExportAddress(int, drvOpcua_DefaultUseServerTime);
 
 /*+**************************************************************************
  *		DSET functions
@@ -243,6 +245,13 @@ static void scanInfoItems(const dbCommon *pcommon, OPCUA_ItemINFO *info)
             info->discardOldest = 0;
         }
     }
+    if (dbFindInfo(pdbentry, "opcua:TIMESTAMP") == 0) {
+        if (strncasecmp(dbGetInfoString(pdbentry), "server", 6) == 0) {
+            info->useServerTime = 1;
+        } else if (strncasecmp(dbGetInfoString(pdbentry), "source", 6) == 0) {
+            info->useServerTime = 0;
+        }
+    }
     if (dbFindInfo(pdbentry, "opcua:ELEMENT") == 0) {
         info->elementName = dbGetInfoString(pdbentry);
     }
@@ -262,8 +271,12 @@ static void opcuaMonitorControl (initHookState state)
 
 static void setTimeStamp (dbCommon *prec, OPCUA_ItemINFO* uaItem)
 {
-    if (prec->tse == epicsTimeEventDeviceTime)
-        prec->time = uaItem->mItem->tsSrv; //FIXME: make configurable
+    if (prec->tse == epicsTimeEventDeviceTime) {
+        if (uaItem->useServerTime)
+            prec->time = uaItem->mItem->tsSrv;
+        else
+            prec->time = uaItem->mItem->tsSrc;
+    }
 }
 
 long init (int after)
@@ -302,6 +315,7 @@ long init_common (dbCommon *prec, struct link* plnk, const epicsType recDataType
     uaItem->prec = prec;
     uaItem->debug = prec->tpro;
     uaItem->lock = epicsMutexMustCreate();
+    uaItem->useServerTime = drvOpcua_DefaultUseServerTime;
     uaItem->samplingInterval = drvOpcua_DefaultSamplingInterval;
     uaItem->queueSize = drvOpcua_DefaultQueueSize;
     uaItem->discardOldest = drvOpcua_DefaultDiscardOldest;

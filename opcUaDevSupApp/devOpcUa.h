@@ -54,6 +54,7 @@ typedef struct OPCUA_ItemINFO {
 
     int isArray;
     int arraySize;
+    int useServerTime;        /* 1: use server timestamp; 2: use source timestamp */
                               /* OPC UA properties of the monitored item */
     double samplingInterval;   /*  FIXME: these should go in the monitoredItem */
     epicsUInt32 queueSize;
