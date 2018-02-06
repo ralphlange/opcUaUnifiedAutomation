@@ -18,10 +18,13 @@
 #ifndef DEVUASUBSCRIPTION_H
 #define DEVUASUBSCRIPTION_H
 
-#include "uabase.h"
-#include "uaclientsdk.h"
 #include <dbCommon.h>
+
+#include <uabase.h>
+#include <uaclientsdk.h>
+
 using namespace UaClientSdk;
+
 class DevUaSubscription :
     public UaSubscriptionCallback
 {

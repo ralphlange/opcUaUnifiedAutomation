@@ -33,48 +33,40 @@ typedef union {                     /* A subset of the built in types we use */
 } epicsAnyVal;                      // perl -ne 'print "$2 $1\n" if($_=~/char\s+([\w\d_]+)\[(\d+)\]/);' base-3.14.12.5/include/*|sort -u
 
 #define ITEMPATHLEN 128
-typedef struct OPCUA_Item {
-
+class OPCUA_ItemINFO {
+public:
 //    int NdIdx;              // Namspace index
     char ItemPath[ITEMPATHLEN];
 
-    int itemDataType;       /* OPCUA Datatype */
-    int itemIdx;            /* Index of this item in UaNodeId vector */
+    int itemDataType;       // OPCUA Datatype
+    int itemIdx;            // Index of this item in UaNodeId vector
 
-    epicsAnyVal varVal;     /* buffer to hold the value got from Opc for all scalar values, including string   */
+    epicsUInt32 userAccLvl; // UserAcessLevel: write=2, read=1, rw=3
+    epicsAnyVal varVal;     // buffer to hold the value got from Opc for all scalar values, including string
 
-    void *pRecVal;          /* point to records val/rval/oval field */
-    epicsType recDataType;  /* Data type of the records VAL/RVAL field */
+    void *pRecVal;          // point to records val/rval/oval field
+    epicsType recDataType;  // Data type of the records VAL/RVAL field
 
-    void *pInpVal;          /* Input field to set OUT-records by the opcUa server */
-    epicsType inpDataType;  /* OUT records: the type of the records input = VAL field - may differ from RVAL type!. INP records = NULL */
+    void *pInpVal;          // Input field to set OUT-records by the opcUa server
+    epicsType inpDataType;  // OUT records: the type of the records input = VAL field - may differ from RVAL type!. INP records = NULL
 
-    epicsMutexId flagLock;  /* mutex for lock flag access */
+    epicsMutexId flagLock;  // mutex for lock flag access
 
     int isArray;
     int arraySize;
-                            /* OPC UA properties of the monitored item */
+                            // OPC UA properties of the monitored item
     double samplingInterval;
     epicsUInt32 queueSize;
     unsigned char discardOldest;
 
     int debug;              // debug level of this item, defined in field REC:TPRO
-    int stat;               /* Status of the opc connection */
-    int flagSuppressWrite;  /* flag for OUT-records: prevent write back of incomming values */
+    int stat;               // Status of the opc connection
+    int flagSuppressWrite;  // flag for OUT-records: prevent write back of incomming values
 
-    IOSCANPVT ioscanpvt;    /* in-records scan request.*/
-    CALLBACK callback;      /* out-records callback request.*/
+    IOSCANPVT ioscanpvt;    // in-records scan request.
+    CALLBACK callback;      // out-records callback request.
 
     dbCommon *prec;
-} OPCUA_ItemINFO;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-OPCUA_ItemINFO *getHead();
-void setHead(OPCUA_ItemINFO *);
-#ifdef __cplusplus
-}
-#endif
+} ;
 
 #endif
