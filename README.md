@@ -99,7 +99,7 @@ EPICS OPC UA device support using the Unified Automation C++ based
 * Waveform: Data conversion from native OpcUa type to the waveform record's
   FTVL type is supported.
   
-* Timestamps: When setting TSE="-2" the OPC UA server timestamp is used.
+* Timestamps: When setting TSE="-2" the OPC UA timestamp is used.
 
 * Initial connection and reconnection are handled appropriately.
   The retry interval for the initial connection can be set using the variable
@@ -138,6 +138,17 @@ EPICS OPC UA device support using the Unified Automation C++ based
   The default discard policy can be configured using the variable
   `drvOpcua_DefaultDiscardOldest` (integer),
   which defaults to 1 (discard the oldest value).
+
+* Configurable timestamp source setting.
+  OPC UA defines two timestamps for monitored items: server timestamp and
+  source timestamp.
+  The timestamp to use (in case of TSE="-2") can be configured for each
+  record by adding an info item like
+     `info(opcua:TIMESTAMP, "source")`
+  selecting "source" or "server".
+  The default UPC UA timestamp can be configured using the variable
+  `drvOpcua_DefaultUseServerTime` (integer),
+  which defaults to 1 (use server timestamp).
 
 ## EPICS Database Examples:
 

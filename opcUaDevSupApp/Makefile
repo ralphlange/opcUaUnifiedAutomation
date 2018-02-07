@@ -10,7 +10,7 @@ opcUa_SRCS = devOpcUa.cpp drvOpcUa.cpp devUaSubscription.cpp
 INC += devOpcUa.h drvOpcUa.h
 
 UASDK_LIBS = uabase uaclient uapki uastack xmlparser
-USR_SYS_LIBS += boost_regex
+#USR_SYS_LIBS += boost_regex
 
 USR_INCLUDES += $(foreach module, $(UASDK_LIBS), -I$(UASDK)/include/$(module))
 

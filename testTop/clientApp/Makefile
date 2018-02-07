@@ -3,7 +3,7 @@ include $(TOP)/configure/CONFIG
 #----------------------------------------
 #  ADD MACRO DEFINITIONS AFTER THIS LINE
 
-PROD = opcUaClient
+#PROD = opcUaClient
 PROD_SRCS = clientMain.cpp
 
 PROD_LIBS += opcUa

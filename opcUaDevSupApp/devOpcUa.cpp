@@ -21,7 +21,6 @@
 #include <string.h>
 #include <strings.h>
 
-// #EPICS LIBS
 #include <dbAccess.h>
 #include <dbEvent.h>
 #include <dbScan.h>
@@ -33,7 +32,14 @@
 #include <devSup.h>
 #include <recSup.h>
 #include <recGbl.h>
-
+#include <asTrapWrite.h>
+#include <alarm.h>
+#include <asDbLib.h>
+#include <cvtTable.h>
+#include <menuFtype.h>
+#include <menuAlarmSevr.h>
+#include <menuAlarmStat.h>
+#include <menuConvert.h>
 #include <aiRecord.h>
 #include <aaiRecord.h>
 #include <aoRecord.h>
@@ -48,20 +54,10 @@
 #include <mbboRecord.h>
 #include <mbbiDirectRecord.h>
 #include <mbboDirectRecord.h>
-#include <asTrapWrite.h>
-#include <alarm.h>
-#include <asDbLib.h>
-#include <cvtTable.h>
-#include <menuFtype.h>
-#include <menuAlarmSevr.h>
-#include <menuAlarmStat.h>
-#include <menuConvert.h>
-//#define GEN_SIZE_OFFSET
 #include <waveformRecord.h>
-//#undef  GEN_SIZE_OFFSET
 
-#include "uabase.h"
-#include "uaclientsdk.h"
+#include <uabase.h>
+#include <uaclientsdk.h>
 
 #include "devOpcUa.h"
 #include "drvOpcUa.h"
@@ -82,7 +78,6 @@ inline int debug_level(dbCommon *prec) {
 
 static  long         read(dbCommon *prec);
 static  long         write(dbCommon *prec);
-static  void         outRecordCallback(CALLBACK *pcallback);
 static  long         get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt);
 
 //extern int OpcUaInitItem(char *OpcUaName, dbCommon* pRecord, OPCUA_ItemINFO** uaItem);
@@ -93,10 +88,12 @@ static  long         get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt);
 static double drvOpcua_DefaultSamplingInterval = -1.0;  // ms (-1 = use publishing interval)
 static int drvOpcua_DefaultQueueSize = 1;               // no queueing
 static int drvOpcua_DefaultDiscardOldest = 1;           // discard oldest value in case of overrun
+static int drvOpcua_DefaultUseServerTime = 1;           // use server timestamp
 
 epicsExportAddress(double, drvOpcua_DefaultSamplingInterval);
 epicsExportAddress(int, drvOpcua_DefaultQueueSize);
 epicsExportAddress(int, drvOpcua_DefaultDiscardOldest);
+epicsExportAddress(int, drvOpcua_DefaultUseServerTime);
 
 /*+**************************************************************************
  *		DSET functions
@@ -248,6 +245,16 @@ static void scanInfoItems(const dbCommon *pcommon, OPCUA_ItemINFO *info)
             info->discardOldest = 0;
         }
     }
+    if (dbFindInfo(pdbentry, "opcua:TIMESTAMP") == 0) {
+        if (strncasecmp(dbGetInfoString(pdbentry), "server", 6) == 0) {
+            info->useServerTime = 1;
+        } else if (strncasecmp(dbGetInfoString(pdbentry), "source", 6) == 0) {
+            info->useServerTime = 0;
+        }
+    }
+    if (dbFindInfo(pdbentry, "opcua:ELEMENT") == 0) {
+        info->elementName = dbGetInfoString(pdbentry);
+    }
     dbFinishEntry(pdbentry);
 }
 
@@ -262,6 +269,16 @@ static void opcuaMonitorControl (initHookState state)
     }
 }
 
+static void setTimeStamp (dbCommon *prec, OPCUA_ItemINFO* uaItem)
+{
+    if (prec->tse == epicsTimeEventDeviceTime) {
+        if (uaItem->useServerTime)
+            prec->time = uaItem->mItem->tsSrv;
+        else
+            prec->time = uaItem->mItem->tsSrc;
+    }
+}
+
 long init (int after)
 {
     static int done = 0;
@@ -273,16 +290,16 @@ long init (int after)
     return 0;
 }
 
-long init_common (dbCommon *prec, struct link* plnk, epicsType recType, void *val, int inpType, void *inpVal)
+long init_common (dbCommon *prec, struct link* plnk, const epicsType recDataType, void *val, const epicsType inpDataType, void *inpVal)
 {
     OPCUA_ItemINFO* uaItem;
 
     if(plnk->type != INST_IO) {
         long status;
-        if (inpType) status = S_dev_badOutType; else status = S_dev_badInpType;
+        if (inpDataType) status = S_dev_badOutType; else status = S_dev_badInpType;
         recGblRecordError(status, prec, "devOpcUa (init_record) Bad INP/OUT link type (must be INST_IO)");
         return status;
-    }                                                                                               
+    }
 
     uaItem =  (OPCUA_ItemINFO *) calloc(1,sizeof(OPCUA_ItemINFO));
     if (!uaItem) {
@@ -291,22 +308,14 @@ long init_common (dbCommon *prec, struct link* plnk, epicsType recType, void *va
         return status;
     }
 
-    if(strlen(plnk->value.instio.string) < ITEMPATHLEN) {
-        strcpy(uaItem->ItemPath,plnk->value.instio.string);
-        addOPCUA_Item(uaItem);
-    }
-    else {
-        long status = S_db_badField;
-        recGblRecordError(status, prec, "devOpcUa (init_record) INP/OUT field too long");
-        return status;
-    }
-
     prec->dpvt = uaItem;
-    uaItem->recDataType = recType;
+    uaItem->elementIndex = -1;
+    uaItem->recDataType = recDataType;
     uaItem->pRecVal = val;
     uaItem->prec = prec;
     uaItem->debug = prec->tpro;
-    uaItem->flagLock = epicsMutexMustCreate();
+    uaItem->lock = epicsMutexMustCreate();
+    uaItem->useServerTime = drvOpcua_DefaultUseServerTime;
     uaItem->samplingInterval = drvOpcua_DefaultSamplingInterval;
     uaItem->queueSize = drvOpcua_DefaultQueueSize;
     uaItem->discardOldest = drvOpcua_DefaultDiscardOldest;
@@ -315,42 +324,39 @@ long init_common (dbCommon *prec, struct link* plnk, epicsType recType, void *va
         errlogPrintf("init_common %s\t PACT= %i, recVal=%p\n", prec->name, prec->pact, uaItem->pRecVal);
     // get OPC item type in init -> after
 
-    if(inpType) { // is OUT record
-        uaItem->inpDataType = (epicsType) inpType;
+    if(inpDataType) { // is OUT record
+        uaItem->inpDataType = inpDataType;
         uaItem->pInpVal = inpVal;
-        callbackSetCallback(outRecordCallback, &(uaItem->callback));
-        callbackSetUser(prec, &(uaItem->callback));
     }
-    else {
-        scanIoInit(&(uaItem->ioscanpvt));
-    }
+
+    addOPCUA_Item(plnk->value.instio.string, uaItem);
+
     return 0;
 }
 
 /***************************************************************************
-    	    	    	    	Longin Support
+                                Longin Support
  **************************************************************************-*/
 long init_longin (struct longinRecord* prec)
 {
-    return init_common((dbCommon*)prec,&(prec->inp),epicsInt32T,(void*)&(prec->val),0,NULL);
+    return init_common((dbCommon*)prec,&(prec->inp),epicsInt32T,(void*)&(prec->val),(epicsType)0,NULL);
 }
 
 long read_longin (struct longinRecord* prec)
 {
     char buf[256];
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    epicsMutexLock(uaItem->lock);
     int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
-    int ret;
-    
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->val = (uaItem->varVal).Int32;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_longin     %s %s %d\n",prec->name,getTime(buf),prec->val);
         if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
     }
-    epicsMutexUnlock(uaItem->flagLock);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -365,8 +371,16 @@ long init_longout( struct longoutRecord* prec)
 long write_longout (struct longoutRecord* prec)
 {
     char buf[256];
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_longout   %s %s RVAL:%d\n",prec->name,getTime(buf),prec->val);
-    return write((dbCommon*)prec);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if (!ret && uaItem->flagSuppressWrite)
+        prec->val = (uaItem->varVal).Int32;
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_longout     %s %s %d\n",prec->name,getTime(buf),prec->val);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
 
 /*+**************************************************************************
@@ -375,25 +389,24 @@ long write_longout (struct longoutRecord* prec)
 long init_mbbiDirect (struct mbbiDirectRecord* prec)
 {
     prec->mask <<= prec->shft;
-    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),0,NULL);
+    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),(epicsType)0,NULL);
 }
 
 long read_mbbiDirect (struct mbbiDirectRecord* prec)
 {
     char buf[256];
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    long ret;
-    int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
 
-    ret = read((dbCommon*)prec);
-    epicsMutexLock(uaItem->flagLock);
+    epicsMutexLock(uaItem->lock);
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (uaItem->varVal).UInt32 & prec->mask;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbiDirect %s %s VAL:%d RVAL:%d\n",prec->name,getTime(buf),prec->val,prec->rval);
         if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
     }
-    epicsMutexUnlock(uaItem->flagLock);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -408,9 +421,21 @@ long init_mbboDirect( struct mbboDirectRecord* prec)
 long write_mbboDirect (struct mbboDirectRecord* prec)
 {
     char buf[256];
-    prec->rval = prec->rval & prec->mask;
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbboDirect %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
-    return write((dbCommon*)prec);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    prec->rval = prec->rval & prec->mask;  //FIXME: that shouldn't be done in place?!
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if (!ret && uaItem->flagSuppressWrite) {
+        epicsUInt32 rval = prec->rval = (uaItem->varVal).UInt32 & prec->mask;
+        if (prec->shft > 0)
+            rval >>= prec->shft;
+        prec->val = rval;
+        prec->udf = FALSE;
+    }
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbboDirect     %s %s %d\n",prec->name,getTime(buf),prec->rval);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d, UDF %d->%d \n",uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
 /*+**************************************************************************
                                 Mbbi Support
@@ -418,25 +443,24 @@ long write_mbboDirect (struct mbboDirectRecord* prec)
 long init_mbbi (struct mbbiRecord* prec)
 {
     prec->mask <<= prec->shft;
-    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),0,NULL);
+    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),(epicsType)0,NULL);
 }
 
 long read_mbbi (struct mbbiRecord* prec)
 {
     char buf[256];
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    long ret;
-    int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
 
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
+    epicsMutexLock(uaItem->lock);
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (uaItem->varVal).UInt32 & prec->mask;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_mbbi %s %s VAL:%d RVAL:%d\n",prec->name,getTime(buf),prec->val,prec->rval);
         if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
     }
-    epicsMutexUnlock(uaItem->flagLock);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -452,9 +476,37 @@ long init_mbbo( struct mbboRecord* prec)
 long write_mbbo (struct mbboRecord* prec)
 {
     char buf[256];
-    prec->rval = prec->rval & prec->mask;
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbbo      %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
-    return write((dbCommon*)prec);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    prec->rval = prec->rval & prec->mask;  //FIXME: that shouldn't be done in place?!
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if (!ret && uaItem->flagSuppressWrite) {
+        epicsUInt32 rval = prec->rval = (uaItem->varVal).UInt32 & prec->mask;
+        if (prec->shft > 0)
+            rval >>= prec->shft;
+        if (prec->sdef) {
+            epicsUInt32 *pstate_values = &prec->zrvl;
+            int i;
+            prec->val = 65535;        /* initalize to unknown state */
+            for (i = 0; i < 16; i++) {
+                if (*pstate_values == rval) {
+                    prec->val = i;
+                    break;
+                }
+                pstate_values++;
+            }
+        }
+        else {
+            /* No defined states, punt */
+            prec->val = rval;
+        }
+        prec->udf = FALSE;
+    }
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_mbbo      %s %s %d\n",prec->name,getTime(buf),prec->rval);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
 
 /*+**************************************************************************
@@ -462,25 +514,24 @@ long write_mbbo (struct mbboRecord* prec)
  **************************************************************************-*/
 long init_bi (struct biRecord* prec)
 {
-    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),0,NULL);
+    return init_common((dbCommon*)prec,&(prec->inp),epicsUInt32T,(void*)&(prec->rval),(epicsType)0,NULL);
 }
 
 long read_bi (struct biRecord* prec)
 {
     char buf[256];
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    epicsMutexLock(uaItem->lock);
     int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
-    long ret = 0;
-	
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if (!ret) {
         prec->rval = (uaItem->varVal).UInt32;
         if(DEBUG_LEVEL >= 2) errlogPrintf("read_bi         %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
         if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
     }
-    epicsMutexUnlock(uaItem->flagLock);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -490,15 +541,28 @@ long read_bi (struct biRecord* prec)
  ***************************************************************************/
 long init_bo( struct boRecord* prec)
 {
-    prec->mask=1;
+    prec->mask = 1;
     return init_common((dbCommon*)prec,&(prec->out),epicsUInt32T,(void*)&(prec->rval),epicsUInt32T,(void*)&(prec->rval));
 }
 
 long write_bo (struct boRecord* prec)
 {
     char buf[256];
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_bo        %s %s RVAL:%d\n",prec->name,getTime(buf),prec->rval);
-    return write((dbCommon*)prec);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    prec->rval = prec->rval & prec->mask;  //FIXME: that shouldn't be done in place?!
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if (!ret && uaItem->flagSuppressWrite) {
+        prec->rval = (uaItem->varVal).UInt32 & prec->mask;
+        if(prec->rval==0) prec->val = 0;
+        else prec->val = 1;
+        prec->udf = FALSE;
+    }
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_bo        %s %s %d\n",prec->name,getTime(buf),prec->rval);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
 
 /*+**************************************************************************
@@ -521,12 +585,40 @@ long init_ao (struct aoRecord* prec)
 long write_ao (struct aoRecord* prec)
 {
     char buf[256];
-    if(DEBUG_LEVEL >= 2) {
-        OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-        errlogPrintf("write_ao %s %s VAL %f RVAL %d OPCVal %f\n",prec->name,getTime(buf),prec->val,prec->rval,(uaItem->varVal).Double);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if (!ret && uaItem->flagSuppressWrite) {
+        bool useValue = true;
+        double value;
+        if (prec->linr != menuConvertNO_CONVERSION) {
+            prec->rval = (uaItem->varVal).Int32;
+            value = (double)prec->rval + (double)prec->roff;
+            if (prec->aslo != 0.0) value *= prec->aslo;
+            value += prec->aoff;
+            if ((prec->linr == menuConvertLINEAR) || (prec->linr == menuConvertSLOPE)) {
+                value = value*prec->eslo + prec->eoff;
+            } else {
+                if (cvtRawToEngBpt(&value, prec->linr, prec->init,
+                                   (void **)&prec->pbrk, &prec->lbrk) != 0) useValue = false;
+            }
+        } else {
+            value = (uaItem->varVal).Double;
+            if (prec->aslo != 0.0) value *= prec->aslo;
+            value += prec->aoff;
+        }
+        if (useValue) {
+            prec->val = value;
+            prec->udf = isnan(value);
+        }
     }
-    return write((dbCommon*)prec);
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_ao      %s %s %d\n",prec->name,getTime(buf),prec->rval);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
+
 /***************************************************************************
                                 ai Support
  **************************************************************************
@@ -540,43 +632,41 @@ long write_ao (struct aoRecord* prec)
 long init_ai (struct aiRecord* prec)
 {
     if(prec->linr == menuConvertNO_CONVERSION)
-        return init_common((dbCommon*)prec,&(prec->inp),epicsFloat64T,(void*)&(prec->val),0,NULL);
+        return init_common((dbCommon*)prec,&(prec->inp),epicsFloat64T,(void*)&(prec->val),(epicsType)0,NULL);
     else
-        return init_common((dbCommon*)prec,&(prec->inp),epicsInt32T,(void*)&(prec->rval),0,NULL);
+        return init_common((dbCommon*)prec,&(prec->inp),epicsInt32T,(void*)&(prec->rval),(epicsType)0,NULL);
 }
 
 long read_ai (struct aiRecord* prec)
 {
     char buf[256];
-    double newVal;
-    long ret;
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*) prec->dpvt;
-    int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
 
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
+    epicsMutexLock(uaItem->lock);
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if (!ret) {
-        if(prec->linr == menuConvertNO_CONVERSION) {
-            newVal = (uaItem->varVal).Double;
-            prec->udf = FALSE;	// aiRecord process doesn't set udf field in case of no convert!
-            if( (prec->smoo > 0) && (! prec->init) ) {
-                prec->val = newVal * (1 - prec->smoo) + prec->val * prec->smoo;
-            }
-            else {
-                prec->val = newVal;
-            }
-            if(DEBUG_LEVEL>= 2) errlogPrintf("read_ai         %s %s\n\tbuf:%f VAL:%f\n", prec->name,getTime(buf),newVal,prec->val);
-            if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d  ret: 2 NO_CONVERSION\n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+        if (prec->linr == menuConvertNO_CONVERSION) {
+            double value = (uaItem->varVal).Double;
+            // ASLO/AOFF conversion
+            if (prec->aslo != 0.0) value *= prec->aslo;
+            value += prec->aoff;
+            // Smoothing
+            if (prec->smoo == 0.0 || prec->udf || !finite(prec->val))
+                prec->val = value;
+            else
+                prec->val = prec->val * prec->smoo + value * (1.0 - prec->smoo);
+            prec->udf = 0;
+            if(DEBUG_LEVEL >= 2) errlogPrintf("read_ai         %s %s\n\tbuf:%f VAL:%f\n", prec->name, getTime(buf), value, prec->val);
+            if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d, UDF %d->%d  ret: 2 NO_CONVERSION\n", uaItem->flagSuppressWrite, udf, prec->udf);
             ret = 2;
-        }
-        else {
+        } else {
             prec->rval = (uaItem->varVal).Int32;
             if(DEBUG_LEVEL >= 2) errlogPrintf("read_ai         %s %s\n\tbuf:%f RVAL:%d\n", prec->name,getTime(buf),(uaItem->varVal).Double,prec->rval);
-            if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d ret: 0 LINR=%d\n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf,prec->linr);
+            if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d, UDF %d->%d ret: 0 LINR=%d\n", uaItem->flagSuppressWrite, udf, prec->udf, prec->linr);
         }
     }
-    epicsMutexUnlock(uaItem->flagLock);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -585,26 +675,26 @@ long read_ai (struct aiRecord* prec)
  **************************************************************************-*/
 long init_stringin (struct stringinRecord* prec)
 {
-    return init_common((dbCommon*)prec,&(prec->inp),epicsOldStringT,(void*)&(prec->val),0,NULL);
+    return init_common((dbCommon*)prec,&(prec->inp),epicsOldStringT,(void*)&(prec->val),(epicsType)0,NULL);
 }
 
 long read_stringin (struct stringinRecord* prec)
 {
     char buf[256];
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    int flagSuppressWrite = uaItem->flagSuppressWrite;
-    int udf   = prec->udf;
-    long ret = 0;
 
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
+    epicsMutexLock(uaItem->lock);
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
     if( !ret ) {
         strncpy(prec->val,(uaItem->varVal).cString,40);    // string length: see stringin.h
+        //FIXME: do not hardcode length
         prec->udf = FALSE;	// stringinRecord process doesn't set udf field in case of no convert!
     }
-    epicsMutexUnlock(uaItem->flagLock);
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_stringin  %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
+    if(DEBUG_LEVEL >= 2) errlogPrintf("read_stringin  %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
     if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
@@ -619,18 +709,29 @@ long init_stringout( struct stringoutRecord* prec)
 long write_stringout (struct stringoutRecord* prec)
 {
     char buf[256];
-    if(DEBUG_LEVEL >= 2) errlogPrintf("write_stringout %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
-    return write((dbCommon*)prec);
+    OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = write((dbCommon*)prec);
+    if( !ret && uaItem->flagSuppressWrite) {
+        strncpy(prec->val,(uaItem->varVal).cString,40);    // string length: see stringin.h
+        //FIXME: do not hardcode length
+        prec->udf = FALSE;
+    }
+    if(DEBUG_LEVEL >= 2) errlogPrintf("write_stringout  %s %s VAL:%s\n",prec->name,getTime(buf),prec->val);
+    if(DEBUG_LEVEL >= 3) errlogPrintf("\tflagSuppressWrite %d->%d, UDF %d->%d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    return ret;
 }
 
 /***************************************************************************
-    	    	    	    	Waveform Support
+                                Waveform Support
  **************************************************************************-*/
 long init_waveformRecord(struct waveformRecord* prec)
 {
     long ret = 0;
     int recType=0;
-    OPCUA_ItemINFO* pOpcUa2Epics=NULL;
+    OPCUA_ItemINFO* uaItem;
     prec->dpvt = NULL;
     switch(prec->ftvl) {
         case menuFtypeSTRING: recType = epicsOldStringT; break;
@@ -644,11 +745,11 @@ long init_waveformRecord(struct waveformRecord* prec)
         case menuFtypeDOUBLE: recType = epicsFloat64T; break;
         case menuFtypeENUM  : recType = epicsEnum16T; break;
     }
-    ret = init_common((dbCommon*)prec,&(prec->inp),(epicsType) recType,(void*)prec->bptr,0,NULL);
-    pOpcUa2Epics = (OPCUA_ItemINFO*)prec->dpvt;
-    if(pOpcUa2Epics != NULL) {
-        pOpcUa2Epics->isArray = 1;
-        pOpcUa2Epics->arraySize = prec->nelm;
+    ret = init_common((dbCommon*)prec,&(prec->inp),(epicsType) recType,(void*)prec->bptr,(epicsType)0,NULL);
+    uaItem = (OPCUA_ItemINFO*)prec->dpvt;
+    if(uaItem != NULL) {
+        uaItem->isArray = 1;
+        uaItem->arraySize = prec->nelm;
     }
     return  ret;
 }
@@ -656,44 +757,30 @@ long init_waveformRecord(struct waveformRecord* prec)
 long read_wf(struct waveformRecord *prec)
 {
     char buf[256];
-    int udf   = prec->udf;
-    int ret = 0;
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    int flagSuppressWrite = uaItem->flagSuppressWrite;
     uaItem->debug = prec->tpro;
-    
-    epicsMutexLock(uaItem->flagLock);
-    ret = read((dbCommon*)prec);
-    if(! ret) {
+
+    epicsMutexLock(uaItem->lock);
+    int flagSuppressWrite = uaItem->flagSuppressWrite;
+    int udf = prec->udf;
+    long ret = read((dbCommon*)prec);
+    if(!ret) {
         prec->nord = uaItem->arraySize;
-        uaItem->arraySize = prec->nelm;
+        uaItem->arraySize = prec->nelm; //FIXME: Is that really useful at every processing? NELM never changes.
         prec->udf=FALSE;
     }
-    epicsMutexUnlock(uaItem->flagLock);
     if(DEBUG_LEVEL >= 2) errlogPrintf("read_wf         %s %s NELM:%d\n",prec->name,getTime(buf),prec->nelm);
     if(DEBUG_LEVEL >= 3) errlogPrintf("\t  flagSuppressWrite %d -> %d, UDF%d -> %d \n",flagSuppressWrite,uaItem->flagSuppressWrite,udf,prec->udf);
+    epicsMutexUnlock(uaItem->lock);
     return ret;
 }
 
-
-/* callback service routine */
-static void outRecordCallback(CALLBACK *pcallback) {
-    char buf[256];
-    void *pVoid;
-    dbCommon *prec;
-    callbackGetUser(pVoid, pcallback);
-    if(pVoid) {
-        prec = (dbCommon*) pVoid;
-        if(DEBUG_LEVEL >= 2) errlogPrintf("outRecordCallback: %s %s\tdbProcess\n", prec->name,getTime(buf));
-        dbProcess(prec);
-    }
-}
-
-static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
+static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT *ppvt) {
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    if(!prec || !prec->dpvt)
+
+    if (!prec || !prec->dpvt)
         return 1;
-    *ppvt = uaItem->ioscanpvt;
+    *ppvt = uaItem->mItem->ioscanpvt;
     if(DEBUG_LEVEL >= 2) errlogPrintf("get_ioint_info %s %s I/O event list - ioscanpvt=%p\n",
                      prec->name, cmd?"removed from":"added to", *ppvt);
     return 0;
@@ -703,23 +790,18 @@ static long get_ioint_info(int cmd, dbCommon *prec, IOSCANPVT * ppvt) {
 static long read(dbCommon * prec) {
     long ret = 0;
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    if(!uaItem) {
-        errlogPrintf("%s read error uaItem = 0\n", prec->name);
-        ret = 1;
+
+    if (!uaItem) {
+        if (DEBUG_LEVEL > 0) errlogPrintf("%s read error: dpvt is NULL\n", prec->name);
+        ret = -1;
+    } else {
+        uaItem->debug = prec->tpro;
+        ret = uaItem->mItem->stat;
+        setTimeStamp((dbCommon*)prec, uaItem);
     }
 
-    uaItem->debug = prec->tpro;
-
-    if(uaItem->flagSuppressWrite == 1) {      // SCAN=I/O Intr: processed after callback just clear flag.
-        uaItem->flagSuppressWrite = 0;
-    }
-
-    ret = uaItem->stat;
-    if(ret) {
-        recGblSetSevr(prec,menuAlarmStatREAD,menuAlarmSevrINVALID);
-    }
-    else {
-        prec->udf=FALSE;
+    if (ret) {
+        recGblSetSevr(prec, menuAlarmStatREAD, menuAlarmSevrINVALID);
     }
     return ret;
 }
@@ -727,33 +809,26 @@ static long read(dbCommon * prec) {
 static long write(dbCommon *prec) {
     long ret = 0;
     OPCUA_ItemINFO* uaItem = (OPCUA_ItemINFO*)prec->dpvt;
-    uaItem->debug = prec->tpro;
-    
-    if(DEBUG_LEVEL >= 3) errlogPrintf("\twrite()            UDF:%i, flagSuppressWrite=%i\n",prec->udf,uaItem->flagSuppressWrite);
 
-    if(!uaItem) {
-        if(DEBUG_LEVEL > 0) errlogPrintf("\twrite %s\t error\n", prec->name);
+    if (!uaItem) {
+        if (DEBUG_LEVEL > 0) errlogPrintf("%s write error: dpvt is NULL\n", prec->name);
         ret = -1;
-    }
-    else {
-        epicsMutexLock(uaItem->flagLock);
-        if(uaItem->flagSuppressWrite == 1) {
-                uaItem->flagSuppressWrite = 0;
-                epicsMutexUnlock(uaItem->flagLock);
-        }
-        else {
-            uaItem->flagSuppressWrite = 1;
-            epicsMutexUnlock(uaItem->flagLock);
-            ret = OpcUaWriteItems(uaItem);
-        }
-    }
-    if(DEBUG_LEVEL >= 3) errlogPrintf("\tOpcUaWriteItems() Done set flagSuppressWrite=%i\n",uaItem->flagSuppressWrite);
+    } else {
+        uaItem->debug = prec->tpro;
 
-    if(ret==0) {
-        prec->udf=FALSE;
+        if (!uaItem->flagSuppressWrite) {
+            epicsMutexLock(uaItem->lock);
+            ret = OpcUaWriteItems(uaItem);
+            if (DEBUG_LEVEL >= 3) errlogPrintf("\tOpcUaWriteItems() done\n");
+            epicsMutexUnlock(uaItem->lock);
+            epicsTimeGetCurrent(&prec->time);
+        } else {
+            setTimeStamp((dbCommon*)prec, uaItem);
+        }
     }
-    else {
-        recGblSetSevr(prec,menuAlarmStatWRITE,menuAlarmSevrINVALID);
+
+    if (ret) {
+        recGblSetSevr(prec, menuAlarmStatWRITE, menuAlarmSevrINVALID);
     }
     return ret;
 }

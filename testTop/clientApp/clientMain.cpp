@@ -128,7 +128,7 @@ OPCUA_ItemINFO * newOpcItem(char *path,int verb)
     pOPCUA_ItemINFO->pInpVal = NULL;
     pOPCUA_ItemINFO->pRecVal = prec->desc;
     pOPCUA_ItemINFO->debug = verbose;
-    pOPCUA_ItemINFO->flagLock = epicsMutexMustCreate();
+    pOPCUA_ItemINFO->lock = epicsMutexMustCreate();
     if(strlen(path) < ITEMPATHLEN) {
         strcpy(pOPCUA_ItemINFO->ItemPath,path);
         addOPCUA_Item(pOPCUA_ItemINFO);

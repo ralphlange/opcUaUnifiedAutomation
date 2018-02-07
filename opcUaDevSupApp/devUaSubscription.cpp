@@ -18,6 +18,7 @@
 
 #include <uasubscription.h>
 #include <uasession.h>
+#include <uagenericunionvalue.h>
 
 #include <epicsTypes.h>
 #include <epicsPrint.h>
@@ -56,6 +57,126 @@ void DevUaSubscription::subscriptionStatusChanged(
                  status.toString().toUtf8());
 }
 
+void DevUaSubscription::distributeData(const UaVariant &value, OPCUA_MonitoredItem *pitem, const int debug)
+{
+    OPCUA_ItemINFO *pinfo;
+
+    if (value.type() == OpcUaType_ExtensionObject) {
+        UaExtensionObject extensionObject;
+        value.toExtensionObject(extensionObject);
+
+        // Try to get the structure definition from the dictionary
+        UaStructureDefinition definition = m_pSession->structureDefinition(extensionObject.encodingTypeId());
+        if (!definition.isNull()) {
+            if (!definition.isUnion()) {
+                // structure
+                // Decode the ExtensionObject to a UaGenericValue to provide access to the structure fields
+                UaGenericStructureValue genericValue;
+                genericValue.setGenericValue(extensionObject, definition);
+
+                if (ellCount(&pitem->inItems)) {
+                    for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                         pinfo;
+                         pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                        if (pinfo->elementName && pinfo->elementIndex == -1) {
+                            if (debug > 3) errlogPrintf("Searching index for element %-20s (record %s)\n",pinfo->elementName,pinfo->prec->name);
+                            for (int i = 0; i < definition.childrenCount(); i++) {
+                                if (genericValue.value(i).type() == OpcUaType_ExtensionObject) {
+                                    errlogPrintf("element %d: nested structures not supported\n", i);
+                                } else {
+                                    if (strcmp(definition.child(i).name().toUtf8(), pinfo->elementName) == 0) {
+                                        epicsMutexLock(pinfo->lock);
+                                        pinfo->itemDataType = genericValue.value(i).type();
+                                        pinfo->elementIndex = i;
+                                        if (debug > 3) errlogPrintf("  ... found element %-20s (record %s) at index %d.\n",pinfo->elementName,pinfo->prec->name,pinfo->elementIndex);
+                                        epicsMutexUnlock(pinfo->lock);
+                                    }
+                                }
+                                if (pinfo->elementIndex == -1) pinfo->elementIndex = -2;
+                            }
+                        }
+                        if (pinfo->elementIndex >=0) {
+                            setRecVal(genericValue.value(pinfo->elementIndex), pinfo, maxDebug(debug, pinfo->debug));
+                            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                        }
+                    }
+                    scanIoRequest(pitem->ioscanpvt);
+                }
+                if ((pinfo = pitem->outItem)) {
+                    errlogPrintf("%-20s: writing structures not supported\n", pinfo->prec->name);
+                }
+            } else {
+                // union
+                // Decode the ExtensionObject to a UaGenericUnionValue to provide access to the tag and value
+                UaGenericUnionValue genericValue;
+                genericValue.setGenericUnion(extensionObject, definition);
+
+                int switchValue = genericValue.switchValue();
+                if (switchValue == 0) {
+                    errlogPrintf("union tag not set\n");
+                } else {
+                    if (genericValue.value().type() == OpcUaType_ExtensionObject) {
+                        errlogPrintf("union: nested structure not supported\n");
+                    } else {
+                        if (ellCount(&pitem->inItems)) {
+                            for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                                 pinfo;
+                                 pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                                epicsMutexLock(pinfo->lock);
+                                pinfo->itemDataType = genericValue.value().type();
+                                epicsMutexUnlock(pinfo->lock);
+                                setRecVal(genericValue.value(), pinfo, maxDebug(debug, pinfo->debug));
+                                if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                            }
+                            scanIoRequest(pitem->ioscanpvt);
+                        }
+                        if ((pinfo = pitem->outItem)) {
+                            epicsMutexLock(pinfo->lock);
+                            pinfo->itemDataType = genericValue.value().type();
+                            epicsMutexUnlock(pinfo->lock);
+                            setRecVal(genericValue.value(), pinfo, maxDebug(debug, pinfo->debug));
+                            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                            callbackRequest(&pitem->callback);
+                        }
+                    }
+                }
+            }
+        } else
+            errlogPrintf("Cannot get a structure definition for %s - check access to type dictionary\n",
+                         extensionObject.dataTypeId().toString().toUtf8());
+    } else {
+        // basic type
+        if (ellCount(&pitem->inItems)) {
+            for (pinfo = (OPCUA_ItemINFO *) ellFirst(&pitem->inItems);
+                 pinfo;
+                 pinfo = (OPCUA_ItemINFO *) ellNext(&pinfo->node)) {
+                if (value.isArray() != pinfo->isArray) {
+                     if (debug)
+                         errlogPrintf("DevUaClient::readAndSetItems() %s data type mismatch: %s OPCUA data for %s record\n",
+                                      pinfo->prec->name, value.isArray() ? "array" : "scalar",
+                                      pinfo->isArray ? "array" : "scalar");
+                } else {
+                    epicsMutexLock(pinfo->lock);
+                    pinfo->itemDataType = value.type();
+                    epicsMutexUnlock(pinfo->lock);
+                    setRecVal(value, pinfo, maxDebug(debug, pinfo->debug));
+                    if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+                    scanIoRequest(pitem->ioscanpvt);
+                }
+            }
+        }
+
+        if ((pinfo = pitem->outItem)) {
+            epicsMutexLock(pinfo->lock);
+            pinfo->itemDataType = value.type();
+            epicsMutexUnlock(pinfo->lock);
+            setRecVal(value, pinfo, maxDebug(debug, pinfo->debug));
+            if (debug > 3) errlogPrintf("Wrote data into %-20s\n",pinfo->prec->name);
+            callbackRequest(&pitem->callback);
+        }
+    }
+}
+
 void DevUaSubscription::dataChange(
     OpcUa_UInt32               clientSubscriptionHandle,
     const UaDataNotifications& dataNotifications,
@@ -66,76 +187,33 @@ void DevUaSubscription::dataChange(
     OpcUa_UInt32 i = 0;
     char timeBuf[30];
     getTime(timeBuf);
-    if(debug>2) errlogPrintf("dataChange %s\n",timeBuf);
-    for ( i=0; i<dataNotifications.length(); i++ )
+
+    if (debug > 2) errlogPrintf("dataChange @ IOC time %s\n",timeBuf);
+    for (i = 0; i < dataNotifications.length(); i++)
     {
-        struct dataChangeError {};
-        OPCUA_ItemINFO* uaItem = m_vectorUaItemInfo->at(dataNotifications[i].ClientHandle);
-        if(debug>3)
-            errlogPrintf("\t%s\n",uaItem->prec->name);
-        else if(uaItem->debug >= 2)
-            errlogPrintf("dataChange: %s %s\n",timeBuf,uaItem->prec->name);
-        epicsMutexLock(uaItem->flagLock);
-        try {
-            if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode) )
-            {
-                if(debug) errlogPrintf("%s %s dataChange FAILED with status %s, Handle=%d\n",timeBuf,uaItem->prec->name,
-                       UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8(),dataNotifications[i].ClientHandle);
-                throw dataChangeError();
-            }
-            uaItem->stat = 0;
-            UaVariant val = dataNotifications[i].Value.Value;
-            if(setRecVal(val,uaItem,maxDebug(debug,uaItem->debug))) {
-                if(debug) errlogPrintf("%s %s dataChange FAILED: setRecVal()\n",timeBuf,uaItem->prec->name);
-                throw dataChangeError();
-            }
-            if(uaItem->inpDataType) { // is OUT Record
-                if(uaItem->debug >= 2) errlogPrintf("dataChange %s\tOUT rec flagSuppressWrite:%d\n", uaItem->prec->name,uaItem->flagSuppressWrite);
-                if(uaItem->flagSuppressWrite==0) {     // Means: dataChange by external value change. Set Record! Invoke processing by callback but suppress another write operation
-                    uaItem->flagSuppressWrite = 1;
-                    callbackRequest(&(uaItem->callback)); // out-records are SCAN="passive" so scanIoRequest doesn't work
-                }
-                else {  // Means dataChange after write operation of the record. Ignore this, no callback, suppress another processing of the record
-                    uaItem->flagSuppressWrite=0;
-                }
-            }
-            else { // is IN Record
-                if(uaItem->prec->scan == SCAN_IO_EVENT)
-                {
-                    scanIoRequest( uaItem->ioscanpvt );    // Update the record immediatly, for scan>SCAN_IO_EVENT update by periodic scan.
-                }
+        OPCUA_MonitoredItem *pitem = m_monitoredItems->at(dataNotifications[i].ClientHandle);
+        if (debug > 3)
+            errlogPrintf("\t%s\n", pitem->itemPath);
 
-            }
-        }
-        catch(dataChangeError) {
-            uaItem->stat = 1;
-        }
-        // I'm not shure about the posibility of another exception but of the damage it could do!
-        catch(...) {
-            uaItem->stat = 1;
-            if(debug || (uaItem->debug>= 2)) errlogPrintf("%s %s\tdataChange: unexpected exception '%s'\n",timeBuf,uaItem->prec->name,epicsTypeNames[uaItem->recDataType]);
-            uaItem->debug = 4;
-        }
+        if (OpcUa_IsBad(dataNotifications[i].Value.StatusCode)) {
+            if(debug) errlogPrintf("%s %s dataChange FAILED with status %s, Handle=%d\n",timeBuf,pitem->itemPath,
+                                   UaStatus(dataNotifications[i].Value.StatusCode).toString().toUtf8(),dataNotifications[i].ClientHandle);
+            pitem->stat = 1;
+        } else
+            pitem->stat = 0;
 
-        // set Timestamp if specified by TSE field
-        UaDateTime dt = UaDateTime(dataNotifications[i].Value.ServerTimestamp);
-        if(uaItem->prec->tse == epicsTimeEventDeviceTime ) {
-            uaItem->prec->time.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
-            uaItem->prec->time.nsec         = dt.msec()*1000000L; // msec is 100ns steps
-        }
-        if(uaItem->debug >= 4) {
-            errlogPrintf("server timestamp: %s, TSE:%d\n",dt.toString().toUtf8(),uaItem->prec->tse);
-        }
-        epicsMutexUnlock(uaItem->flagLock);
+        UaVariant tempValue(dataNotifications[i].Value.Value);
 
+        UaDateTime dt;
+        dt = dataNotifications[i].Value.ServerTimestamp;
+        pitem->tsSrv.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+        pitem->tsSrv.nsec         = dt.msec()*1000000L; // msec is 100ns steps
+        dt = dataNotifications[i].Value.SourceTimestamp;
+        pitem->tsSrc.secPastEpoch = dt.toTime_t() - POSIX_TIME_AT_EPICS_EPOCH;
+        pitem->tsSrc.nsec         = dt.msec()*1000000L; // msec is 100ns steps
 
-        if(uaItem->debug >= 4)
-            errlogPrintf("\tepicsType: %2d,%s opcType%2d:%s flagSuppressWrite:%d\n",
-                         uaItem->recDataType,epicsTypeNames[uaItem->recDataType],
-                    uaItem->itemDataType,variantTypeStrings(uaItem->itemDataType),
-                    uaItem->flagSuppressWrite);
-    } //end for
-    return;
+        distributeData(tempValue, pitem, debug);
+    }
 }
 
 void DevUaSubscription::newEvents(
@@ -191,14 +269,14 @@ UaStatus DevUaSubscription::deleteSubscription()
     return result;
 }
 
-UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeId,std::vector<OPCUA_ItemINFO *> *uaItemInfo)
+UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeId, std::vector<OPCUA_MonitoredItem *> *m_vectorUaItems)
 {
     if(debug) errlogPrintf("DevUaSubscription::createMonitoredItems\n");
-    if( uaItemInfo->size() == vUaNodeId.size())
-        m_vectorUaItemInfo = uaItemInfo;
+    if( m_vectorUaItems->size() == vUaNodeId.size())
+        m_monitoredItems = m_vectorUaItems;
     else
     {
-        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: Nr of uaItems %i != nr of browsepathItems %i\n",(int)uaItemInfo->size(),(int)vUaNodeId.size());
+        errlogPrintf("\nDevUaSubscription::createMonitoredItems Error: Nr of uaItems %i != nr of browsepathItems %i\n",(int)m_vectorUaItems->size(),(int)vUaNodeId.size());
         return OpcUa_BadInvalidState;
     }
     if(false == m_pSession->isConnected() ) {
@@ -212,24 +290,26 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
     ServiceSettings serviceSettings;
     UaMonitoredItemCreateRequests itemsToCreate;
     UaMonitoredItemCreateResults createResults;
-    OPCUA_ItemINFO *info;
+    OPCUA_MonitoredItem *pitem;
+    OPCUA_ItemINFO *pinfo;
     // Configure one item to add to subscription
     // We monitor the value of the ServerStatus -> CurrentTime
     itemsToCreate.create(vUaNodeId.size());
     for(i=0; i<vUaNodeId.size(); i++) {
-        info = uaItemInfo->at(i);
+        pitem = m_vectorUaItems->at(i);
+        pinfo = ellCount(&pitem->inItems) ? (OPCUA_ItemINFO *) ellFirst(&pitem->inItems) : pitem->outItem;
         if ( !vUaNodeId[i].isNull() ) {
-            UaNodeId tempNode(vUaNodeId[i]);
+            vUaNodeId[i].copyTo(&(itemsToCreate[i].ItemToMonitor.NodeId));
             itemsToCreate[i].ItemToMonitor.AttributeId = OpcUa_Attributes_Value;
-            tempNode.copyTo(&(itemsToCreate[i].ItemToMonitor.NodeId));
             itemsToCreate[i].RequestedParameters.ClientHandle = i;
-            itemsToCreate[i].RequestedParameters.SamplingInterval = info->samplingInterval;
-            itemsToCreate[i].RequestedParameters.QueueSize = info->queueSize;
-            itemsToCreate[i].RequestedParameters.DiscardOldest = (info->discardOldest ? OpcUa_True : OpcUa_False);
+            //FIXME: Next three should be in the item instead
+            itemsToCreate[i].RequestedParameters.SamplingInterval = pinfo->samplingInterval;
+            itemsToCreate[i].RequestedParameters.QueueSize = pinfo->queueSize;
+            itemsToCreate[i].RequestedParameters.DiscardOldest = (pinfo->discardOldest ? OpcUa_True : OpcUa_False);
             itemsToCreate[i].MonitoringMode = OpcUa_MonitoringMode_Reporting;
         }
         else {
-            errlogPrintf("%s Skip illegal node: %s\n",info->prec->name,info->ItemPath);
+            errlogPrintf("Skip illegal node: %s\n",pitem->itemPath);
         }
     }
     if(debug) errlogPrintf("\nAdd monitored items to subscription ...\n");
@@ -251,9 +331,7 @@ UaStatus DevUaSubscription::createMonitoredItems(std::vector<UaNodeId> &vUaNodeI
             else
             {
                 if(debug) {
-                    OPCUA_ItemINFO* uaItem = m_vectorUaItemInfo->at(i);
-                    errlogPrintf("%4d %s DevUaSubscription::createMonitoredItems failed for node: %s - Status %s\n",
-                        i, uaItem->prec->name,
+                    errlogPrintf("DevUaSubscription::createMonitoredItems failed for node: %s - Status %s\n",
                         UaNodeId(itemsToCreate[i].ItemToMonitor.NodeId).toXmlString().toUtf8(),
                         UaStatus(createResults[i].StatusCode).toString().toUtf8());
                 }
