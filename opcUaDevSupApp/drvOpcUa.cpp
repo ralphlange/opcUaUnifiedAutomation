@@ -138,6 +138,7 @@ public:
     void setBadQuality();
     void clearItemCache();
 
+    bool isConnected() const { return m_pSession->isConnected(); }
     void addOPCUA_Item(const char *itemPath, OPCUA_ItemINFO *h);
     long getNodes();
     long getBrowsePathItem(OpcUa_BrowsePath &browsePaths,std::string &ItemPath,const char nameSpaceDelim,const char pathDelimiter);
@@ -1077,6 +1078,8 @@ long OpcUaWriteItems(OPCUA_ItemINFO* uaItem)
     UaWriteValues       nodesToWrite;       // Array of nodes to write
     UaStatusCodeArray   results;            // Returns an array of status codes
     UaDiagnosticInfos   diagnosticInfos;    // Returns an array of diagnostic info
+
+    if (!pMyClient->isConnected()) return 1;
 
     nodesToWrite.create(1);
     pMyClient->vUaNodeId.at(uaItem->mItem->nodeIndex).copyTo(&nodesToWrite[0].NodeId);
